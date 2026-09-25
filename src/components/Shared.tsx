@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { AuditEvent, Batch, Category } from '../types';
-import { CATEGORY_COLORS, CATEGORY_LABELS, FLIGHTS, operatorRouteOptions } from '../engine';
+import { CATEGORY_COLORS, CATEGORY_LABELS, FLIGHTS, FOOD_GROUP_LABELS, operatorRouteOptions } from '../engine';
 import type { OperatorDecision } from '../engine';
 import { SensorChart } from './Charts';
 
 export function CategoryBadge({ category }: { category: Category }) {
   return <span className={`category-badge category-${category.toLowerCase()}`} style={{ '--category-color': CATEGORY_COLORS[category] } as React.CSSProperties}>{CATEGORY_LABELS[category]}</span>;
+}
+
+export function FoodGroupBadge({ foodGroup }: { foodGroup: Batch['foodGroup'] }) {
+  return <span className={`food-group-badge food-group-${foodGroup.toLowerCase()}`}>{FOOD_GROUP_LABELS[foodGroup]}</span>;
 }
 
 export function StatCard({ label, value, detail, icon }: { label: string; value: string; detail: string; icon: string }) {

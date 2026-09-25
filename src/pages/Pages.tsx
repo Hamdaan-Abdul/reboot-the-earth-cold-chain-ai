@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react';
 import type { AuditEvent, Batch, Category, FoodGroup, Product } from '../types';
 import { CATEGORY_COLORS, CATEGORY_LABELS, createManualBatch, createProductProfile, DESTINATIONS, FLIGHTS, FOOD_GROUP_LABELS, PRODUCTS } from '../engine';
 import { EthyleneChart, HumidityChart, RouteMap, SensorChart, SpeedChart, TemperatureChart } from '../components/Charts';
-import { CategoryBadge, EventList, SectionHeading } from '../components/Shared';
+import { CategoryBadge, EventList, FoodGroupBadge, SectionHeading } from '../components/Shared';
 
 const needsOperatorReview = (batch: Batch) => batch.contaminated || batch.status === 'ANOMALY_DETECTED' || batch.status === 'PENDING_APPROVAL';
 
@@ -13,12 +13,13 @@ export function OverviewPage({ batches, events, onSelectBatch, onOpenNotificatio
   const estimatedValue = batches.reduce((total, batch) => total + batch.expectedRecoveryValue, 0);
   const estimatedFoodSavedKg = batches.reduce((total, batch) => total + (!batch.contaminated && batch.category !== 'EXPIRED' ? batch.weightKg * batch.probabilitySafeArrival : 0), 0);
   return <div className="page-stack">
-    <SectionHeading eyebrow="Operations" title="Start with the lots that need you." detail="Review safety alerts and proposed routes. Nothing moves without an operator’s approval." action={<button className="action-needed-count notification-shortcut" onClick={onOpenNotifications}>Review queue · {actionCount}</button>} />
+    <SectionHeading eyebrow="Operations" title="Start with the lots that need you." detail="Review safety alerts and proposed routes. Nothing moves without an operator’s approval." action={<div className="home-quick-actions"><button className="home-activity-button" onClick={onOpenActivity}>Recent activity <span aria-hidden="true">↗</span></button><button className="action-needed-count notification-shortcut" onClick={onOpenNotifications}>Review queue · {actionCount}</button></div>} />
+    <div className="home-priority-grid">
     <section className="panel home-action-panel" aria-labelledby="home-action-heading">
       <div className="panel-title-row"><div><div className="eyebrow">Your queue</div><h3 id="home-action-heading">Needs your review</h3></div><span className="small-muted">{actionCount} {actionCount === 1 ? 'lot' : 'lots'}</span></div>
       {actionBatches.length ? actionBatches.slice(0, 3).map((batch) => <button className="home-action-row selectable-row" key={batch.id} onClick={() => onSelectBatch(batch.id)} aria-label={`Review ${batch.productName}, lot ${batch.id}`}>
         <span className={`notification-mark ${batch.contaminated ? 'danger' : ''}`} aria-hidden="true">{batch.contaminated ? '!' : '↗'}</span>
-        <span className="home-action-copy"><strong>{batch.productName} <span>· {batch.id}</span></strong><small>{batch.anomalyReason ? `Alert: ${batch.anomalyReason}.` : batch.lastActionReason}</small><small><b>Suggested:</b> {batch.lastAction}</small></span>
+        <span className="home-action-copy"><strong>{batch.productName} <span>· {batch.id}</span></strong><span className="home-food-tags"><FoodGroupBadge foodGroup={batch.foodGroup} /><CategoryBadge category={batch.category} /></span><small>{batch.anomalyReason ? `Alert: ${batch.anomalyReason}.` : batch.lastActionReason}</small><small><b>Suggested:</b> {batch.lastAction}</small></span>
         <span className="notification-open">Open lot <span aria-hidden="true">→</span></span>
       </button>) : <p className="empty-action-state">No lots need review. Search or scan a lot to check its current status.</p>}
     </section>
@@ -26,13 +27,14 @@ export function OverviewPage({ batches, events, onSelectBatch, onOpenNotificatio
       <div className="impact-widget-heading"><div><div className="eyebrow">Current inventory estimate</div><h3>Money · food waste avoided</h3></div><small>Potential outcomes from current lot assessments</small></div>
       <div className="impact-widget-metrics"><div><small>Estimated net recovery value</small><strong>QAR {estimatedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</strong><span>After modeled route and handling costs</span></div><div><small>Potential food kept in use</small><strong>{(estimatedFoodSavedKg / 1000).toFixed(1)} t</strong><span>{estimatedFoodSavedKg.toLocaleString(undefined, { maximumFractionDigits: 0 })} kg · safe-arrival-weighted estimate</span></div></div>
     </section>
+    </div>
     <section className="panel live-batches">
         <div className="panel-title-row"><div><div className="eyebrow">Inventory</div><h3>Recent lots</h3></div><span className="small-muted">{batches.length} in view</span></div>
         {batches.slice(0, 5).map((batch) => <button className="batch-health-row selectable-row" key={batch.id} onClick={() => onSelectBatch(batch.id)} aria-label={`Open details for ${batch.id}`}>
           <span className="health-product-icon" style={{ color: CATEGORY_COLORS[batch.category] }}>{batch.productName.slice(0, 1)}</span>
           <div className="health-meta"><strong>{batch.productName}</strong><small>{batch.id} · {batch.weightKg} kg</small></div>
           <div className="health-days"><strong>{batch.dslDays.toFixed(1)} d</strong><small>freshness</small></div>
-          <CategoryBadge category={batch.category} />
+          <div className="home-row-tags"><FoodGroupBadge foodGroup={batch.foodGroup} /><CategoryBadge category={batch.category} /></div>
         </button>)}
         <button className="text-link inventory-link" onClick={onOpenLots}>View all lots →</button>
     </section>
@@ -52,15 +54,18 @@ export function ActivityPage({ batches, events }: { batches: Batch[]; events: Au
 }
 
 export function NotificationsPage({ batches, events, onSelectBatch }: { batches: Batch[]; events: AuditEvent[]; onSelectBatch: (id: string) => void }) {
+  const [query, setQuery] = useState('');
   const actionBatches = batches.filter(needsOperatorReview)
+    .filter((batch) => `${batch.id} ${batch.productName} ${batch.supplierLotCode} ${batch.foodGroup} ${FOOD_GROUP_LABELS[batch.foodGroup]}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => Number(b.contaminated) - Number(a.contaminated) || a.dslDays - b.dslDays);
   return <div className="page-stack">
     <SectionHeading eyebrow="Operator queue" title="Needs your review" detail="Check the alert, evidence, and suggested next step. This demo will not dispatch a shipment." />
+    <label className="inventory-filter">Search actions<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Food, lot code, or food group" /></label>
     {actionBatches.length ? <section className="panel"><div className="simple-notification-list">{actionBatches.map((batch) => <button key={batch.id} className="simple-notification selectable-row" onClick={() => onSelectBatch(batch.id)}>
       <span className={`notification-mark ${batch.contaminated ? 'danger' : ''}`}>{batch.contaminated ? '!' : '↗'}</span>
-      <span className="notification-main"><strong>{batch.productName} <span>· {batch.id}</span></strong><small>{batch.anomalyReason ? `Alert: ${batch.anomalyReason}.` : batch.lastActionReason}</small><small>Temperature {batch.tempC.toFixed(1)}°C · safe range {batch.safeRange.minC}–{batch.safeRange.maxC}°C · freshness estimate {batch.dslDays.toFixed(1)} days</small><small><b>Suggested:</b> {batch.lastAction} · estimated net {batch.expectedRecoveryValue >= 0 ? '+' : ''}QAR {batch.expectedRecoveryValue.toFixed(0)}</small></span>
+      <span className="notification-main"><strong>{batch.productName} <span>· {batch.id}</span></strong><span className="home-food-tags"><FoodGroupBadge foodGroup={batch.foodGroup} /><CategoryBadge category={batch.category} /></span><small>{batch.anomalyReason ? `Alert: ${batch.anomalyReason}.` : batch.lastActionReason}</small><small>Temperature {batch.tempC.toFixed(1)}°C · safe range {batch.safeRange.minC}–{batch.safeRange.maxC}°C · freshness estimate {batch.dslDays.toFixed(1)} days</small><small><b>Suggested:</b> {batch.lastAction} · estimated net {batch.expectedRecoveryValue >= 0 ? '+' : ''}QAR {batch.expectedRecoveryValue.toFixed(0)}</small></span>
       <span className="notification-open">Review lot →</span>
-    </button>)}</div></section> : <section className="panel empty-action-state">No lots need review right now. New alerts will appear here.</section>}
+    </button>)}</div></section> : <section className="panel empty-action-state">{query ? 'No action items match your search.' : 'No lots need review right now. New alerts will appear here.'}</section>}
     <section className="panel"><div className="panel-title-row"><div><div className="eyebrow">Recent activity</div><h3>Latest updates</h3></div></div><EventList events={events} batches={batches} limit={8} /></section>
   </div>;
 }
@@ -170,7 +175,7 @@ export function MapPage({ batches, onSelectBatch }: { batches: Batch[]; onSelect
     </div>
     <section className="panel"><div className="panel-title-row"><div><div className="eyebrow">Simulated vehicle signals</div><h3>Modeled positions & speed</h3></div></div>
       <div className="telemetry-table-wrap"><table className="data-table"><thead><tr><th>Load</th><th>GPS coordinates</th><th>Speed</th><th>ETA delay</th><th>Weather heat</th><th>Demand</th><th>Destination</th></tr></thead><tbody>
-        {batches.map((batch) => <tr key={batch.id} className="selectable-table-row" onClick={() => openBatch(batch.id)} tabIndex={0} aria-label={`Open ${batch.productName} lot ${batch.id}`} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openBatch(batch.id); } }}><td><span className="table-product"><i style={{ background: CATEGORY_COLORS[batch.category] }} />{batch.id} · {batch.productName}</span></td><td>{batch.lat.toFixed(3)}, {batch.lng.toFixed(3)}</td><td>{batch.speedKmph.toFixed(0)} km/h</td><td>{batch.trafficDelayHours.toFixed(1)} h</td><td>{batch.weatherHeatIndexC.toFixed(0)}°C</td><td>{Math.round(batch.demandProbability * 100)}%</td><td>{batch.assignedDestination.name}</td></tr>)}
+        {batches.map((batch) => <tr key={batch.id} className="selectable-table-row" onClick={() => openBatch(batch.id)} tabIndex={0} aria-label={`Open ${batch.productName} lot ${batch.id}`} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openBatch(batch.id); } }}><td><span className="table-product"><i style={{ background: CATEGORY_COLORS[batch.category] }} />{batch.id} · {batch.productName}</span><small className="table-subline">{FOOD_GROUP_LABELS[batch.foodGroup]} · {CATEGORY_LABELS[batch.category]}</small></td><td>{batch.lat.toFixed(3)}, {batch.lng.toFixed(3)}</td><td>{batch.speedKmph.toFixed(0)} km/h</td><td>{batch.trafficDelayHours.toFixed(1)} h</td><td>{batch.weatherHeatIndexC.toFixed(0)}°C</td><td>{Math.round(batch.demandProbability * 100)}%</td><td>{batch.assignedDestination.name}</td></tr>)}
       </tbody></table></div>
     </section>
     <section className="panel"><div className="panel-title-row"><div><div className="eyebrow">Air-cargo routine · simulated schedule feed</div><h3>Flight board & available reefer capacity</h3></div><span className="small-muted">Illustrative schedules · not live airline data</span></div>
@@ -202,7 +207,7 @@ export function InspectorPage({ batches, onSelectBatch }: { batches: Batch[]; on
     <label className="inventory-filter">Filter lots<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, lot code, or supplier lot" /></label>
     <section className="panel inventory-list" aria-label="Produce lots">
       {filtered.map((batch) => <button key={batch.id} className="inventory-row selectable-row" onClick={() => onSelectBatch(batch.id)}>
-        <span className="inventory-title"><strong>{batch.productName}</strong><small>{batch.id} · {batch.originCity}, {batch.originCountry}</small></span>
+        <span className="inventory-title"><strong>{batch.productName}</strong><small>{batch.id} · {batch.originCity}, {batch.originCountry}</small><FoodGroupBadge foodGroup={batch.foodGroup} /></span>
         <span className="inventory-cell"><small>Condition</small><CategoryBadge category={batch.category} /></span>
         <span className="inventory-cell"><small>Est. freshness</small><strong>{batch.dslDays.toFixed(1)} days</strong></span>
         <span className="inventory-cell"><small>Temperature</small><strong>{batch.tempC.toFixed(1)}°C <span className={batch.tempC > batch.safeRange.maxC || batch.tempC < batch.safeRange.minC ? 'text-warning' : 'text-good'}>{batch.tempC > batch.safeRange.maxC || batch.tempC < batch.safeRange.minC ? '· Above safe range' : '· In safe range'}</span></strong></span>
@@ -222,16 +227,23 @@ const flowStages = [
 ] as const;
 
 export function PipelinePage({ batches, onSelectBatch }: { batches: Batch[]; onSelectBatch: (id: string) => void }) {
-  const placed = useMemo(() => batches.map((batch) => {
+  const [query, setQuery] = useState('');
+  const placed = useMemo(() => batches.filter((batch) => `${batch.id} ${batch.productName} ${batch.supplierLotCode} ${batch.foodGroup} ${FOOD_GROUP_LABELS[batch.foodGroup]}`.toLowerCase().includes(query.toLowerCase())).map((batch) => {
     const index = flowStages.findIndex((stage) => stage.id === batch.workflowStage);
-    return { batch, index: Math.max(1, index) };
-  }), [batches]);
+    return { batch, index: index < 0 ? 0 : index };
+  }), [batches, query]);
+  const inputGroups = Object.entries(placed.filter((item) => item.index === 0).reduce<Record<string, number>>((counts, { batch }) => {
+    counts[batch.foodGroup] = (counts[batch.foodGroup] ?? 0) + 1;
+    return counts;
+  }, {}));
   return <div className="page-stack">
     <SectionHeading eyebrow="Decision workflow" title="From incoming load to best outcome." detail="Batch movement is derived from current classification and destination — no fixed demo cards." />
+    <label className="inventory-filter workflow-search">Search workflow<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Food, lot code, or food group" /></label>
     <div className="workflow-track">{flowStages.map((stage, index) => <div className={`workflow-stage ${index < flowStages.length - 1 ? 'has-connector' : ''}`} key={stage.id}>
       <div className="workflow-head"><span className="workflow-number">0{index + 1}</span><span className="workflow-count">{placed.filter((item) => item.index === index).length}</span></div>
       <h3>{stage.label}</h3><p>{stage.note}</p>
-      <div className="workflow-items">{placed.filter((item) => item.index === index).map(({ batch }) => <button className="workflow-card selectable-row" key={batch.id} style={{ borderLeftColor: CATEGORY_COLORS[batch.category] }} onClick={() => onSelectBatch(batch.id)}><div><strong>{batch.id}</strong><CategoryBadge category={batch.category} /></div><span>{batch.productName} · {batch.weightKg} kg</span><small>{batch.dslDays.toFixed(1)} days left · {batch.lastAction}</small></button>)}{!placed.some((item) => item.index === index) && <div className="workflow-empty">No batches in this step</div>}</div>
+      {index === 0 && inputGroups.length > 0 && <div className="workflow-food-groups">{inputGroups.map(([group, count]) => <span key={group}>{FOOD_GROUP_LABELS[group as FoodGroup]} · {count}</span>)}</div>}
+      <div className="workflow-items">{placed.filter((item) => item.index === index).map(({ batch }) => <button className="workflow-card selectable-row" key={batch.id} style={{ borderLeftColor: CATEGORY_COLORS[batch.category] }} onClick={() => onSelectBatch(batch.id)}><div><strong>{batch.id}</strong><CategoryBadge category={batch.category} /></div><span>{batch.productName} · {batch.weightKg} kg</span><FoodGroupBadge foodGroup={batch.foodGroup} /><small>{batch.dslDays.toFixed(1)} days left · {batch.lastAction}</small></button>)}{!placed.some((item) => item.index === index) && <div className="workflow-empty">{query ? 'No matching lots in this step.' : index === 0 ? 'New lots appear here when they are added from Manual intake.' : 'No batches in this step.'}</div>}</div>
     </div>)}</div>
     <section className="panel"><div className="panel-title-row"><div><div className="eyebrow">Routing policy</div><h3>Every move respects food safety first.</h3></div></div><div className="policy-grid"><div><strong>01 · Match freshness</strong><span>Rmax must cover destination distance; closer positive routes are preferred as DSL falls.</span></div><div><strong>02 · Protect value</strong><span>Expected recovery is destination price × safe-arrival probability less transport and handling.</span></div><div><strong>03 · Recover responsibly</strong><span>Unsafe or contaminated expired food is the only batch sent to landfill.</span></div></div></section>
   </div>;
@@ -240,10 +252,12 @@ export function PipelinePage({ batches, onSelectBatch }: { batches: Batch[]; onS
 export function SimulatorPage({ batches, events, onAction, onSelectBatch }: { batches: Batch[]; events: AuditEvent[]; onAction: (id: string, action: 'refrigeration' | 'ethylene' | 'traffic') => void; onSelectBatch: (id: string) => void }) {
   const [selectedId, setSelectedId] = useState(batches[0]?.id ?? '');
   const selected = batches.find((batch) => batch.id === selectedId) ?? batches[0];
+  const [query, setQuery] = useState('');
+  const matchingBatches = batches.filter((batch) => `${batch.id} ${batch.productName} ${batch.supplierLotCode} ${batch.foodGroup} ${FOOD_GROUP_LABELS[batch.foodGroup]}`.toLowerCase().includes(query.toLowerCase()));
   return <div className="page-stack">
     <SectionHeading eyebrow="What-if lab" title="Stress-test the cold chain." detail="Inject real faults into a selected batch. Sensor streams, shelf life, route decisions, and audit events update together." />
     <section className="panel simulator-panel">
-      <div className="simulator-select"><label htmlFor="sim-batch">Selected lot</label><select id="sim-batch" value={selected?.id ?? ''} onChange={(event) => { setSelectedId(event.target.value); onSelectBatch(event.target.value); }}>{batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.id} · {batch.productName}</option>)}</select></div>
+      <div className="simulator-select"><label htmlFor="sim-search">Find lot</label><input id="sim-search" type="search" value={query} onChange={(event) => { const nextQuery = event.target.value; setQuery(nextQuery); const matches = batches.filter((batch) => `${batch.id} ${batch.productName} ${batch.supplierLotCode} ${batch.foodGroup} ${FOOD_GROUP_LABELS[batch.foodGroup]}`.toLowerCase().includes(nextQuery.toLowerCase())); if (matches.length && !matches.some((batch) => batch.id === selectedId)) { setSelectedId(matches[0].id); onSelectBatch(matches[0].id); } }} placeholder="Name, lot code, or food group" /><label htmlFor="sim-batch">Selected lot</label><select id="sim-batch" value={matchingBatches.some((batch) => batch.id === selected?.id) ? selected?.id : ''} disabled={!matchingBatches.length} onChange={(event) => { setSelectedId(event.target.value); onSelectBatch(event.target.value); }}>{matchingBatches.length ? matchingBatches.map((batch) => <option key={batch.id} value={batch.id}>{batch.id} · {batch.productName} · {FOOD_GROUP_LABELS[batch.foodGroup]} · {CATEGORY_LABELS[batch.category]}</option>) : <option value="">No lots match</option>}</select></div>
       <div className="simulator-actions">
         <button className="sim-action" onClick={() => selected && onAction(selected.id, 'refrigeration')}><span className="sim-action-icon">♨</span><strong>Refrigeration failure</strong><small>Ramp 12°C → 20°C over the next four sensor ticks</small></button>
         <button className="sim-action" onClick={() => selected && onAction(selected.id, 'ethylene')}><span className="sim-action-icon purple">◉</span><strong>Ethylene spike</strong><small>Inject a climacteric gas leak above 1.2 ppm</small></button>
@@ -251,7 +265,7 @@ export function SimulatorPage({ batches, events, onAction, onSelectBatch }: { ba
       </div>
     </section>
     {selected && <div className="simulator-grid">
-      <section className="panel"><div className="panel-title-row"><div><div className="eyebrow">Selected sample lot</div><h3>{selected.productName} <span className="small-muted">· {selected.id}</span></h3></div><div><CategoryBadge category={selected.category} /><button className="text-link" onClick={() => onSelectBatch(selected.id)}>Open lot summary</button></div></div>
+      <section className="panel"><div className="panel-title-row"><div><div className="eyebrow">Selected sample lot</div><h3>{selected.productName} <span className="small-muted">· {selected.id}</span></h3><FoodGroupBadge foodGroup={selected.foodGroup} /></div><div><CategoryBadge category={selected.category} /><button className="text-link" onClick={() => onSelectBatch(selected.id)}>Open lot summary</button></div></div>
         <div className="sim-metrics"><div><small>Temperature · safe {selected.safeRange.minC}–{selected.safeRange.maxC}°C</small><strong>{selected.tempC.toFixed(1)}°C</strong></div><div><small>Ethylene · simulated</small><strong>{selected.ethylenePpm.toFixed(2)} ppm</strong></div><div><small>Time outside safe range</small><strong>{selected.timeOutOfRangeMin.toFixed(1)} min</strong></div><div><small>Estimated freshness</small><strong>{selected.dslDays.toFixed(1)} days</strong></div><div><small>Estimated safe arrival</small><strong>{Math.round(selected.probabilitySafeArrival * 100)}%</strong></div><div><small>Suggested route</small><strong>{selected.assignedDestination.name}</strong></div></div>
         <div className="chart-title"><strong>Simulated sensor readings</strong><span>Updated {selected.history.at(-1)?.time ?? 'not available'}</span></div><SensorChart readings={selected.history} safeRange={{ min: selected.safeRange.minC, max: selected.safeRange.maxC }} />
       </section>

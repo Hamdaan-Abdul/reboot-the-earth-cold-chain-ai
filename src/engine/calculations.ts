@@ -11,10 +11,8 @@ export function computeRemainingDSL(batch: Pick<Batch, 'baselineDays' | 'tempC' 
   return clamp(computeDSL(batch) - batch.ageDays, 0, batch.baselineDays);
 }
 
-export function computeRMax(batch: Pick<Batch, 'dslDays' | 'productKey'>): number {
-  const product = PRODUCTS[batch.productKey];
-  if (!product) return 0;
-  return Math.max(0, (batch.dslDays - 1) * product.averageTransitSpeedKmPerDay);
+export function computeRMax(batch: Pick<Batch, 'dslDays' | 'averageTransitSpeedKmPerDay'>): number {
+  return Math.max(0, (batch.dslDays - 1) * batch.averageTransitSpeedKmPerDay);
 }
 
 export function computeProbabilitySafeArrival(
@@ -68,7 +66,12 @@ function candidatesFor(batch: Batch): Destination[] {
   if (batch.contaminated) return localDestinations.filter((destination) => destination.type === 'LANDFILL');
   switch (batch.category) {
     case 'RAW':
-      return DESTINATIONS.filter((destination) => (destination.type === 'RIPENING' || destination.type === 'EXPORT')
+      if (batch.foodGroup === 'FRUIT' || batch.foodGroup === 'VEGETABLE') {
+        return DESTINATIONS.filter((destination) => (destination.type === 'RIPENING' || destination.type === 'EXPORT')
+          && (destination.routeMode !== 'AIR' || flightForRoute(batch.originAirportCode, destination) !== undefined));
+      }
+      return localDestinations.filter((destination) => ['DC', 'RETAIL', 'LOCAL'].includes(destination.type)
+        && destination.distanceKm <= 1400
         && (destination.routeMode !== 'AIR' || flightForRoute(batch.originAirportCode, destination) !== undefined));
     case 'EDIBLE':
       return localDestinations.filter((destination) => ['DC', 'RETAIL', 'LOCAL'].includes(destination.type) && destination.distanceKm <= 1400
@@ -82,7 +85,7 @@ function candidatesFor(batch: Batch): Destination[] {
 
 function destinationForBatch(batch: Batch, destination: Destination): Destination {
   if (batch.category === 'ALMOST_BAD' && ['LOCAL', 'DISCOUNT'].includes(destination.type)) {
-    const marketPrice = PRODUCTS[batch.productKey]?.priceBasePerKg ?? destination.pricePerKg;
+    const marketPrice = batch.priceBasePerKg || PRODUCTS[batch.productKey]?.priceBasePerKg || destination.pricePerKg;
     return { ...destination, pricePerKg: marketPrice * 0.5 };
   }
   return destination;
@@ -151,7 +154,32 @@ export function selectDestination(batch: Batch, objective: 'long-range' | 'short
     ?? DESTINATIONS.find((destination) => destination.type === 'FOOD_BANK')!;
 }
 
-export function updateBatchCore(batch: Batch, objective: 'long-range' | 'shortest-positive' = 'long-range'): Batch {
+export function operatorRouteOptions(batch: Batch): Destination[] {
+  return candidatesFor(batch)
+    .map((destination) => ({ ...destination, distanceKm: routeDistanceKm(batch, destination) }))
+    .filter((destination) => batch.category === 'EXPIRED'
+      ? destination.distanceKm <= 35
+      : destination.distanceKm <= batch.rMaxKm)
+    .filter((destination) => {
+      const flight = flightForRoute(batch.originAirportCode, destination);
+      return !destination.flightId || Boolean(flight && flight.cargoCapacityKg - flight.cargoBookedKg >= batch.weightKg);
+    })
+    .filter((destination) => {
+      if (batch.category === 'RAW' && destination.type === 'EXPORT') {
+        const flight = flightForRoute(batch.originAirportCode, destination);
+        return Boolean(flight && destination.pricePerKg > flight.cargoRatePerKg + (destination.ripeningCostPerKg ?? 0));
+      }
+      return true;
+    })
+    .map((destination) => destinationForBatch(batch, destination))
+    .sort((a, b) => a.distanceKm - b.distanceKm);
+}
+
+export function updateBatchCore(
+  batch: Batch,
+  objective: 'long-range' | 'shortest-positive' = 'long-range',
+  destinationOverride?: Destination,
+): Batch {
   const next = { ...batch };
   next.dslDays = computeRemainingDSL(next);
   next.category = classifyByDSL(next.dslDays);
@@ -160,7 +188,7 @@ export function updateBatchCore(batch: Batch, objective: 'long-range' | 'shortes
   const previousDestinationId = next.assignedDestination.id;
   next.assignedDestination = next.flightStatus === 'IN_TRANSIT' && next.flight
     ? next.assignedDestination
-    : selectDestination(next, objective);
+    : destinationOverride ?? selectDestination(next, objective);
   const routeChanged = next.assignedDestination.id !== previousDestinationId;
   if (routeChanged && next.dispatchConfirmed) {
     next.dispatchConfirmed = false;

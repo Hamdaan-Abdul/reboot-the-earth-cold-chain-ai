@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   makeInitialBatches,
-  confirmDispatch,
+  recordOperatorDecision,
   tickSimulation,
   triggerEthyleneSpike,
   triggerRefrigerationFailure,
   triggerTrafficDelay,
 } from './engine';
-import type { AuditEvent, Batch } from './types';
+import { PRODUCTS } from './engine/products';
+import type { AuditEvent, Batch, Product } from './types';
 import { BatchDetailDrawer } from './components/Shared';
 import { QRScanner } from './components/QRScanner';
-import { IntakePage, OverviewPage, MapPage, InspectorPage, NotificationsPage, PipelinePage, SimulatorPage, ReferencePage } from './pages/Pages';
+import { ActivityPage, IntakePage, OverviewPage, MapPage, InspectorPage, NotificationsPage, PipelinePage, SimulatorPage, ReferencePage } from './pages/Pages';
 
 const navigation = [
   { id: 'overview', label: 'Home', icon: '⌂' },
@@ -22,6 +23,7 @@ const navigation = [
 const moreNavigation = [
   { id: 'map', label: 'Route map', icon: '⌁' },
   { id: 'pipeline', label: 'Workflow', icon: '⇢' },
+  { id: 'activity', label: 'Recent activity', icon: '◷' },
   { id: 'simulator', label: 'Anomaly lab', icon: '⚡' },
   { id: 'reference', label: 'Reference', icon: '≡' },
 ] as const;
@@ -46,6 +48,22 @@ function initialAudit(batches: Batch[]): AuditEvent[] {
 
 const STORAGE_KEY = 'cold-chain-prototype-state';
 
+function isStoredProduct(value: unknown): value is Product {
+  if (!value || typeof value !== 'object') return false;
+  const product = value as Partial<Product>;
+  return typeof product.key === 'string'
+    && typeof product.name === 'string'
+    && typeof product.foodGroup === 'string'
+    && ['FRUIT', 'VEGETABLE', 'MEAT', 'POULTRY', 'SEAFOOD', 'DAIRY', 'OTHER'].includes(product.foodGroup)
+    && typeof product.baselineDays === 'number'
+    && Number.isFinite(product.baselineDays)
+    && Boolean(product.safeRange && typeof product.safeRange.minC === 'number' && typeof product.safeRange.maxC === 'number')
+    && typeof product.optimalMaxTempC === 'number'
+    && typeof product.climacteric === 'boolean'
+    && typeof product.averageTransitSpeedKmPerDay === 'number'
+    && typeof product.priceBasePerKg === 'number';
+}
+
 function isStoredBatch(value: unknown): value is Batch {
   if (!value || typeof value !== 'object') return false;
   const batch = value as Partial<Batch>;
@@ -63,20 +81,35 @@ function isStoredBatch(value: unknown): value is Batch {
     && Array.isArray(batch.eventLog);
 }
 
-function loadAppState(): { batches: Batch[]; events: AuditEvent[]; warning: string; lastUpdated: Date } {
+function loadAppState(): { batches: Batch[]; events: AuditEvent[]; products: Record<string, Product>; warning: string; lastUpdated: Date } {
   const seeded = makeInitialBatches();
   const now = new Date();
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (!stored) return { batches: seeded, events: initialAudit(seeded), warning: '', lastUpdated: now };
+    if (!stored) return { batches: seeded, events: initialAudit(seeded), products: PRODUCTS, warning: '', lastUpdated: now };
     const parsed: unknown = JSON.parse(stored);
-    if (!parsed || typeof parsed !== 'object') return { batches: seeded, events: initialAudit(seeded), warning: 'Saved local data was invalid; starting with sample lots.', lastUpdated: now };
-    const state = parsed as { schemaVersion?: unknown; batches?: unknown; manualLots?: unknown; events?: unknown; savedAt?: unknown };
-    const savedBatches = state.schemaVersion === 1 && Array.isArray(state.batches) && state.batches.length > 0 && state.batches.every(isStoredBatch)
-      ? state.batches
+    if (!parsed || typeof parsed !== 'object') return { batches: seeded, events: initialAudit(seeded), products: PRODUCTS, warning: 'Saved local data was invalid; starting with sample lots.', lastUpdated: now };
+    const state = parsed as { schemaVersion?: unknown; batches?: unknown; manualLots?: unknown; events?: unknown; products?: unknown; savedAt?: unknown };
+    const storedProducts = Array.isArray(state.products) ? state.products.filter(isStoredProduct) : [];
+    const products = Object.fromEntries([...Object.values(PRODUCTS), ...storedProducts].map((product) => [product.key, product]));
+    const upgradeBatch = (batch: Batch): Batch => {
+      const profile = products[batch.productKey];
+      return {
+        ...batch,
+        foodGroup: profile?.foodGroup ?? batch.foodGroup ?? 'OTHER',
+        baselineDays: profile?.baselineDays ?? batch.baselineDays,
+        safeRange: profile?.safeRange ?? batch.safeRange,
+        optimalMaxTempC: profile?.optimalMaxTempC ?? batch.optimalMaxTempC,
+        climacteric: profile?.climacteric ?? batch.climacteric,
+        averageTransitSpeedKmPerDay: profile?.averageTransitSpeedKmPerDay ?? batch.averageTransitSpeedKmPerDay ?? 600,
+        priceBasePerKg: profile?.priceBasePerKg ?? batch.priceBasePerKg ?? 1,
+      };
+    };
+    const savedBatches = (state.schemaVersion === 1 || state.schemaVersion === 2) && Array.isArray(state.batches) && state.batches.length > 0 && state.batches.every(isStoredBatch)
+      ? state.batches.map(upgradeBatch)
       : undefined;
     const legacyManualLots = Array.isArray(state.manualLots)
-      ? state.manualLots.filter((lot): lot is Batch => isStoredBatch(lot) && lot.isManual === true)
+      ? state.manualLots.filter((lot): lot is Batch => isStoredBatch(lot) && lot.isManual === true).map(upgradeBatch)
       : [];
     const savedEvents = Array.isArray(state.events)
       ? state.events.filter((event): event is AuditEvent => Boolean(event && typeof event === 'object' && typeof (event as AuditEvent).id === 'string' && typeof (event as AuditEvent).message === 'string' && typeof (event as AuditEvent).at === 'string' && typeof (event as AuditEvent).batchId === 'string' && ['INFO', 'WARNING', 'SUCCESS', 'CRITICAL'].includes((event as AuditEvent).kind)))
@@ -86,11 +119,12 @@ function loadAppState(): { batches: Batch[]; events: AuditEvent[]; warning: stri
     return {
       batches: validBatches,
       events: savedEvents.length ? savedEvents.slice(0, 40) : initialAudit(validBatches),
+      products,
       warning: state.schemaVersion === 1 && !savedBatches ? 'Saved lot data was invalid; restored the sample inventory.' : '',
-      lastUpdated: savedBatches ? validSavedAt : now,
+      lastUpdated: savedBatches || legacyManualLots.length ? validSavedAt : now,
     };
   } catch {
-    return { batches: seeded, events: initialAudit(seeded), warning: 'Local storage is unavailable; changes will not persist after this session.', lastUpdated: now };
+    return { batches: seeded, events: initialAudit(seeded), products: PRODUCTS, warning: 'Local storage is unavailable; changes will not persist after this session.', lastUpdated: now };
   }
 }
 
@@ -100,6 +134,7 @@ export default function App() {
   const [batches, setBatches] = useState<Batch[]>(initialState.batches);
   const batchesRef = useRef(batches);
   const [events, setEvents] = useState<AuditEvent[]>(initialState.events);
+  const [products, setProducts] = useState<Record<string, Product>>(initialState.products);
   const [now, setNow] = useState(initialState.lastUpdated);
   const [selectedBatchId, setSelectedBatchId] = useState<string>();
   const [searchQuery, setSearchQuery] = useState('');
@@ -146,15 +181,16 @@ export default function App() {
   useEffect(() => {
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         batches,
         events: events.slice(0, 40),
+        products: Object.values(products).filter((product) => product.custom),
         savedAt: now.toISOString(),
       }));
     } catch {
       setStorageWarning('Could not save this session locally; new lots and activity will be lost after closing the browser.');
     }
-  }, [batches, events, now]);
+  }, [batches, events, now, products]);
 
   useEffect(() => {
     const interval = window.setInterval(advanceSimulation, 2500);
@@ -204,21 +240,26 @@ export default function App() {
     });
   };
 
-  const confirmRecommendation = (batchId: string, operatorName: string) => {
+  const recordDecision = (batchId: string, operatorName: string, decision: 'APPROVED_SUGGESTION' | 'ALTERNATE_ROUTE' | 'HOLD_FOR_INSPECTION', note: string, destinationId?: string) => {
     const previous = batchesRef.current.find((batch) => batch.id === batchId);
     if (!previous) return;
+    const updated = recordOperatorDecision(previous, operatorName, decision, note, destinationId);
     setNow(new Date());
-    const updated = confirmDispatch(previous, operatorName);
     const next = batchesRef.current.map((batch) => batch.id === batchId ? updated : batch);
     batchesRef.current = next;
     setBatches(next);
-    setEvents((current) => [{
+    const decisionEvent: AuditEvent = {
       id: `${batchId}-${Date.now()}-dispatch`,
       at: new Date().toLocaleTimeString(),
       batchId,
-      message: `Route approved in demo by ${operatorName} · ${updated.assignedDestination.name}, ${updated.assignedDestination.country}. No real booking or dispatch was made.`,
-      kind: 'SUCCESS' as const,
-    }, ...current].slice(0, 40));
+      message: decision === 'HOLD_FOR_INSPECTION'
+        ? `Lot held for inspection by ${operatorName}.${note.trim() ? ` Note: ${note.trim()}` : ''}`
+        : decision === 'ALTERNATE_ROUTE'
+          ? `Operator chose ${updated.assignedDestination.name} · ${operatorName}.${note.trim() ? ` Note: ${note.trim()}` : ''} Demo only; no real shipment was made.`
+          : `Suggested route approved by ${operatorName}.${note.trim() ? ` Note: ${note.trim()}` : ''} Demo only; no real shipment was made.`,
+      kind: decision === 'HOLD_FOR_INSPECTION' ? 'WARNING' : 'SUCCESS',
+    };
+    setEvents((current) => [decisionEvent, ...current].slice(0, 40));
   };
 
   const findBatch = (query: string) => {
@@ -267,20 +308,33 @@ export default function App() {
     setSelectedBatchId(batch.id);
   };
 
+  const addProduct = (product: Product) => {
+    setProducts((current) => ({ ...current, [product.key]: product }));
+    const referenceEvent: AuditEvent = {
+      id: `${product.key}-${Date.now()}-reference`,
+      at: new Date().toLocaleTimeString(),
+      batchId: 'SYSTEM',
+      message: `Food reference added · ${product.name} (${product.foodGroup}) · model parameters saved in this browser.`,
+      kind: 'INFO',
+    };
+    setEvents((current) => [referenceEvent, ...current].slice(0, 40));
+  };
+
   const selectBatch = (batchId: string) => setSelectedBatchId(batchId);
   const selectedBatch = batches.find((batch) => batch.id === selectedBatchId);
   const simulationStale = Date.now() - now.getTime() > 10000;
 
   const renderPage = () => {
     switch (page) {
-      case 'overview': return <OverviewPage batches={batches} onSelectBatch={selectBatch} onOpenNotifications={() => setPage('notifications')} onOpenLots={() => setPage('inspector')} />;
+      case 'overview': return <OverviewPage batches={batches} events={events} onSelectBatch={selectBatch} onOpenNotifications={() => setPage('notifications')} onOpenLots={() => setPage('inspector')} onOpenActivity={() => setPage('activity')} />;
       case 'map': return <MapPage batches={batches} onSelectBatch={selectBatch} />;
       case 'inspector': return <InspectorPage batches={batches} onSelectBatch={selectBatch} />;
       case 'notifications': return <NotificationsPage batches={batches} events={events} onSelectBatch={selectBatch} />;
-      case 'intake': return <IntakePage batches={batches} onAddBatch={addBatch} />;
+      case 'intake': return <IntakePage batches={batches} products={products} onAddBatch={addBatch} />;
       case 'pipeline': return <PipelinePage batches={batches} onSelectBatch={selectBatch} />;
+      case 'activity': return <ActivityPage batches={batches} events={events} />;
       case 'simulator': return <SimulatorPage batches={batches} events={events} onAction={triggerAction} onSelectBatch={selectBatch} />;
-      case 'reference': return <ReferencePage batches={batches} onSelectBatch={selectBatch} />;
+      case 'reference': return <ReferencePage batches={batches} products={products} onAddProduct={addProduct} onSelectBatch={selectBatch} />;
     }
   };
 
@@ -326,7 +380,7 @@ export default function App() {
       <div className="content-panel" key={page}>{renderPage()}</div>
       <footer className="app-footer"><span>REBOOT THE EARTH <i>·</i> COLD-CHAIN DECISION SUPPORT</span><span>Demo only · example data · no real bookings or dispatches</span></footer>
     </main>
-    {selectedBatch && <BatchDetailDrawer batch={selectedBatch} events={events} onClose={() => setSelectedBatchId(undefined)} onAction={triggerAction} onApplyRecommendation={confirmRecommendation} />}
+    {selectedBatch && <BatchDetailDrawer batch={selectedBatch} events={events} onClose={() => setSelectedBatchId(undefined)} onAction={triggerAction} onRecordDecision={recordDecision} />}
     {scannerOpen && <QRScanner onClose={() => setScannerOpen(false)} onDetected={handleScannedCode} />}
   </div>;
 }

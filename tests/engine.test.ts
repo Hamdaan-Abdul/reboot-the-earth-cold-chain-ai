@@ -3,9 +3,12 @@ import {
   computeDSL,
   computeProbabilitySafeArrival,
   createManualBatch,
+  createProductProfile,
   confirmDispatch,
   financialCheck,
   makeInitialBatches,
+  operatorRouteOptions,
+  recordOperatorDecision,
   routeDistanceKm,
   selectDestination,
   tickSimulation,
@@ -103,6 +106,69 @@ describe('cold-chain engine calculations', () => {
     expect(() => createManualBatch({ ...base, id: existing[0].id.toLowerCase() }, existing)).toThrow('already in use');
     expect(() => createManualBatch({ ...base, weightKg: 0 }, existing)).toThrow('Weight must be positive');
     expect(() => createManualBatch({ ...base, ageDays: Number.NaN }, existing)).toThrow('all measurements must be numbers');
+  });
+
+  it('uses user-added profiles for grouped foods when assessing new lots', () => {
+    const existing = makeInitialBatches();
+    const profile = createProductProfile({
+      name: 'Fresh turkey',
+      foodGroup: 'POULTRY',
+      baselineDays: 5,
+      safeRange: { minC: 0, maxC: 4 },
+      optimalMaxTempC: 4,
+      climacteric: false,
+      averageTransitSpeedKmPerDay: 400,
+      priceBasePerKg: 7,
+    });
+    const batch = createManualBatch({
+      id: 'LOT-TURKEY-01',
+      productKey: profile.key,
+      originCity: 'Madrid',
+      originCountry: 'Spain',
+      supplierName: 'Local poultry supplier',
+      weightKg: 150,
+      tempC: 3,
+      ageDays: 1,
+      ethylenePpm: 0,
+    }, existing, { ...PRODUCTS, [profile.key]: profile });
+    expect(profile.foodGroup).toBe('POULTRY');
+    expect(batch.productName).toBe('Fresh turkey');
+    expect(batch.foodGroup).toBe('POULTRY');
+    expect(batch.safeRange).toEqual({ minC: 0, maxC: 4 });
+    expect(batch.priceBasePerKg).toBe(7);
+    expect(batch.assignedDestination.country).toBe('Spain');
+    expect(new Set(Object.values(PRODUCTS).map((item) => item.foodGroup))).toEqual(new Set(['FRUIT', 'VEGETABLE', 'MEAT', 'POULTRY', 'SEAFOOD', 'DAIRY', 'OTHER']));
+    expect(() => createProductProfile({
+      name: 'Invalid profile',
+      foodGroup: 'MEAT',
+      baselineDays: 3,
+      safeRange: { minC: 4, maxC: 0 },
+      optimalMaxTempC: 2,
+      climacteric: false,
+      averageTransitSpeedKmPerDay: 400,
+      priceBasePerKg: 5,
+    })).toThrow('Check the shelf life');
+  });
+
+  it('records operator notes for hold and alternate-route decisions', () => {
+    const batch = makeInitialBatches().find((item) => item.originAirportCode === 'UIO' && item.category === 'RAW')!;
+    const held = recordOperatorDecision(batch, 'Ari', 'HOLD_FOR_INSPECTION', 'Check pallet 4 first');
+    expect(held.operatorDecision).toBe('HOLD_FOR_INSPECTION');
+    expect(held.operatorNote).toBe('Check pallet 4 first');
+    expect(held.dispatchConfirmed).toBe(false);
+    expect(held.eventLog[0]).toContain('Check pallet 4 first');
+
+    const alternate = operatorRouteOptions(batch).find((option) => option.id !== batch.assignedDestination.id);
+    expect(alternate).toBeDefined();
+    const chosen = recordOperatorDecision(batch, 'Ari', 'ALTERNATE_ROUTE', 'Use the nearer hub', alternate!.id);
+    expect(chosen.operatorDecision).toBe('ALTERNATE_ROUTE');
+    expect(chosen.assignedDestination.id).toBe(alternate!.id);
+    expect(chosen.operatorNote).toBe('Use the nearer hub');
+    expect(chosen.dispatchConfirmed).toBe(true);
+
+    const unsafe = makeInitialBatches().find((item) => item.contaminated)!;
+    expect(() => recordOperatorDecision(unsafe, 'Ari', 'APPROVED_SUGGESTION')).toThrow('must be checked');
+    expect(recordOperatorDecision(unsafe, 'Ari', 'HOLD_FOR_INSPECTION', 'Quarantine it').dispatchConfirmed).toBe(false);
   });
 
   it('moves produce from edible to almost-bad as freshness ages and records the stage transition', () => {

@@ -1,15 +1,17 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import type { AuditEvent, Batch, Category } from '../types';
-import { CATEGORY_COLORS, CATEGORY_LABELS, createManualBatch, DESTINATIONS, FLIGHTS, PRODUCTS } from '../engine';
+import type { AuditEvent, Batch, Category, FoodGroup, Product } from '../types';
+import { CATEGORY_COLORS, CATEGORY_LABELS, createManualBatch, createProductProfile, DESTINATIONS, FLIGHTS, FOOD_GROUP_LABELS, PRODUCTS } from '../engine';
 import { EthyleneChart, HumidityChart, RouteMap, SensorChart, SpeedChart, TemperatureChart } from '../components/Charts';
 import { CategoryBadge, EventList, SectionHeading } from '../components/Shared';
 
 const needsOperatorReview = (batch: Batch) => batch.contaminated || batch.status === 'ANOMALY_DETECTED' || batch.status === 'PENDING_APPROVAL';
 
-export function OverviewPage({ batches, onSelectBatch, onOpenNotifications, onOpenLots }: { batches: Batch[]; onSelectBatch: (id: string) => void; onOpenNotifications: () => void; onOpenLots: () => void }) {
+export function OverviewPage({ batches, events, onSelectBatch, onOpenNotifications, onOpenLots, onOpenActivity }: { batches: Batch[]; events: AuditEvent[]; onSelectBatch: (id: string) => void; onOpenNotifications: () => void; onOpenLots: () => void; onOpenActivity: () => void }) {
   const actionBatches = batches.filter(needsOperatorReview)
     .sort((a, b) => Number(b.contaminated) - Number(a.contaminated) || a.dslDays - b.dslDays);
   const actionCount = actionBatches.length;
+  const estimatedValue = batches.reduce((total, batch) => total + batch.expectedRecoveryValue, 0);
+  const estimatedFoodSavedKg = batches.reduce((total, batch) => total + (!batch.contaminated && batch.category !== 'EXPIRED' ? batch.weightKg * batch.probabilitySafeArrival : 0), 0);
   return <div className="page-stack">
     <SectionHeading eyebrow="Operations" title="Start with the lots that need you." detail="Review safety alerts and proposed routes. Nothing moves without an operator’s approval." action={<button className="action-needed-count notification-shortcut" onClick={onOpenNotifications}>Review queue · {actionCount}</button>} />
     <section className="panel home-action-panel" aria-labelledby="home-action-heading">
@@ -19,6 +21,10 @@ export function OverviewPage({ batches, onSelectBatch, onOpenNotifications, onOp
         <span className="home-action-copy"><strong>{batch.productName} <span>· {batch.id}</span></strong><small>{batch.anomalyReason ? `Alert: ${batch.anomalyReason}.` : batch.lastActionReason}</small><small><b>Suggested:</b> {batch.lastAction}</small></span>
         <span className="notification-open">Open lot <span aria-hidden="true">→</span></span>
       </button>) : <p className="empty-action-state">No lots need review. Search or scan a lot to check its current status.</p>}
+    </section>
+    <section className="impact-widget" aria-label="Estimated recovery impact">
+      <div className="impact-widget-heading"><div><div className="eyebrow">Current inventory estimate</div><h3>Money · food waste avoided</h3></div><small>Potential outcomes from current lot assessments</small></div>
+      <div className="impact-widget-metrics"><div><small>Estimated net recovery value</small><strong>QAR {estimatedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</strong><span>After modeled route and handling costs</span></div><div><small>Potential food kept in use</small><strong>{(estimatedFoodSavedKg / 1000).toFixed(1)} t</strong><span>{estimatedFoodSavedKg.toLocaleString(undefined, { maximumFractionDigits: 0 })} kg · safe-arrival-weighted estimate</span></div></div>
     </section>
     <section className="panel live-batches">
         <div className="panel-title-row"><div><div className="eyebrow">Inventory</div><h3>Recent lots</h3></div><span className="small-muted">{batches.length} in view</span></div>
@@ -30,6 +36,18 @@ export function OverviewPage({ batches, onSelectBatch, onOpenNotifications, onOp
         </button>)}
         <button className="text-link inventory-link" onClick={onOpenLots}>View all lots →</button>
     </section>
+    <section className="panel home-activity-panel">
+      <div className="panel-title-row"><div><div className="eyebrow">Activity</div><h3>Recent updates</h3></div><button className="text-link" onClick={onOpenActivity}>View activity log →</button></div>
+      <EventList events={events} batches={batches} limit={3} />
+    </section>
+  </div>;
+}
+
+export function ActivityPage({ batches, events }: { batches: Batch[]; events: AuditEvent[] }) {
+  return <div className="page-stack">
+    <SectionHeading eyebrow="Audit trail · this browser" title="Recent activity" detail="Sensor alerts, route suggestions, operator decisions, and lot updates from this demo." />
+    <section className="panel"><EventList events={events} batches={batches} limit={40} /></section>
+    <p className="prototype-warning">Activity is stored only in this browser. It is not a shared or tamper-proof production audit log.</p>
   </div>;
 }
 
@@ -40,27 +58,29 @@ export function NotificationsPage({ batches, events, onSelectBatch }: { batches:
     <SectionHeading eyebrow="Operator queue" title="Needs your review" detail="Check the alert, evidence, and suggested next step. This demo will not dispatch a shipment." />
     {actionBatches.length ? <section className="panel"><div className="simple-notification-list">{actionBatches.map((batch) => <button key={batch.id} className="simple-notification selectable-row" onClick={() => onSelectBatch(batch.id)}>
       <span className={`notification-mark ${batch.contaminated ? 'danger' : ''}`}>{batch.contaminated ? '!' : '↗'}</span>
-      <span className="notification-main"><strong>{batch.productName} <span>· {batch.id}</span></strong><small>{batch.anomalyReason ? `Alert: ${batch.anomalyReason}.` : batch.lastActionReason}</small><small>Temperature {batch.tempC.toFixed(1)}°C · safe range {batch.safeRange.minC}–{batch.safeRange.maxC}°C · freshness estimate {batch.dslDays.toFixed(1)} days</small><small><b>Suggested:</b> {batch.lastAction} · estimated net value {batch.expectedRecoveryValue >= 0 ? '+' : ''}{batch.expectedRecoveryValue.toFixed(0)} model units</small></span>
+      <span className="notification-main"><strong>{batch.productName} <span>· {batch.id}</span></strong><small>{batch.anomalyReason ? `Alert: ${batch.anomalyReason}.` : batch.lastActionReason}</small><small>Temperature {batch.tempC.toFixed(1)}°C · safe range {batch.safeRange.minC}–{batch.safeRange.maxC}°C · freshness estimate {batch.dslDays.toFixed(1)} days</small><small><b>Suggested:</b> {batch.lastAction} · estimated net {batch.expectedRecoveryValue >= 0 ? '+' : ''}QAR {batch.expectedRecoveryValue.toFixed(0)}</small></span>
       <span className="notification-open">Review lot →</span>
     </button>)}</div></section> : <section className="panel empty-action-state">No lots need review right now. New alerts will appear here.</section>}
     <section className="panel"><div className="panel-title-row"><div><div className="eyebrow">Recent activity</div><h3>Latest updates</h3></div></div><EventList events={events} batches={batches} limit={8} /></section>
   </div>;
 }
 
-export function IntakePage({ batches, onAddBatch }: { batches: Batch[]; onAddBatch: (batch: Batch) => void }) {
+export function IntakePage({ batches, products, onAddBatch }: { batches: Batch[]; products: Record<string, Product>; onAddBatch: (batch: Batch) => void }) {
   const origins = Array.from(new Map(batches.map((batch) => [batch.originCountry, batch])).values());
   const [id, setId] = useState(() => `LOT-MANUAL-${String(batches.length + 1).padStart(3, '0')}`);
-  const [productKey, setProductKey] = useState(Object.keys(PRODUCTS)[0]);
+  const [foodGroup, setFoodGroup] = useState<FoodGroup>('FRUIT');
+  const groupProducts = Object.values(products).filter((product) => product.foodGroup === foodGroup);
+  const [productKey, setProductKey] = useState(() => Object.values(PRODUCTS).find((product) => product.foodGroup === 'FRUIT')?.key ?? Object.keys(PRODUCTS)[0]);
   const [originCountry, setOriginCountry] = useState(origins[0]?.originCountry ?? '');
   const [originCity, setOriginCity] = useState(origins[0]?.originCity ?? '');
   const [supplierName, setSupplierName] = useState('');
   const [weightKg, setWeightKg] = useState('400');
-  const [tempC, setTempC] = useState(String(PRODUCTS[Object.keys(PRODUCTS)[0]].optimalMaxTempC));
+  const [tempC, setTempC] = useState(String(products[productKey]?.optimalMaxTempC ?? 5));
   const [ageDays, setAgeDays] = useState('1');
   const [ethylenePpm, setEthylenePpm] = useState('0.1');
   const [error, setError] = useState('');
   const [preview, setPreview] = useState<Batch>();
-  const selectedProduct = PRODUCTS[productKey];
+  const selectedProduct = products[productKey] ?? groupProducts[0] ?? Object.values(PRODUCTS)[0];
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -74,7 +94,7 @@ export function IntakePage({ batches, onAddBatch }: { batches: Batch[]; onAddBat
         setError('Check the weight, temperature, age, and ethylene values.');
         return;
       }
-      const batch = createManualBatch({ id, productKey, originCity, originCountry, supplierName, weightKg: Number(weightKg), tempC: Number(tempC), ageDays: Number(ageDays), ethylenePpm: Number(ethylenePpm) }, batches);
+      const batch = createManualBatch({ id, productKey, originCity, originCountry, supplierName, weightKg: Number(weightKg), tempC: Number(tempC), ageDays: Number(ageDays), ethylenePpm: Number(ethylenePpm) }, batches, products);
       setPreview(batch);
       setError('');
     } catch (submissionError) {
@@ -85,8 +105,9 @@ export function IntakePage({ batches, onAddBatch }: { batches: Batch[]; onAddBat
   return <div className="page-stack">
     <SectionHeading eyebrow="Manual intake" title="Check a new lot" detail="Enter a few known details. The engine will estimate freshness, safety, and a recommended next step." />
     <div className="intake-layout"><form className="panel intake-form" onSubmit={submit}>
+      <label>What type of food?<select value={foodGroup} onChange={(event) => { const nextGroup = event.target.value as FoodGroup; const nextProduct = Object.values(products).find((product) => product.foodGroup === nextGroup); setFoodGroup(nextGroup); if (nextProduct) { setProductKey(nextProduct.key); setTempC(String(nextProduct.optimalMaxTempC)); } setPreview(undefined); }}>{Object.entries(FOOD_GROUP_LABELS).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></label>
+      <label>Food type<select value={productKey} onChange={(event) => { setProductKey(event.target.value); setTempC(String(products[event.target.value].optimalMaxTempC)); setPreview(undefined); }}>{groupProducts.map((product) => <option value={product.key} key={product.key}>{product.name}{product.custom ? ' · custom reference' : ''}</option>)}</select></label>
       <label>Lot code<input required value={id} onChange={(event) => { setId(event.target.value); setPreview(undefined); }} /></label>
-      <label>Produce<select value={productKey} onChange={(event) => { setProductKey(event.target.value); setTempC(String(PRODUCTS[event.target.value].optimalMaxTempC)); setPreview(undefined); }}>{Object.values(PRODUCTS).map((product) => <option value={product.key} key={product.key}>{product.name}</option>)}</select></label>
       <label>Origin country<select value={originCountry} onChange={(event) => { setOriginCountry(event.target.value); setOriginCity(origins.find((origin) => origin.originCountry === event.target.value)?.originCity ?? ''); setPreview(undefined); }}>{origins.map((origin) => <option key={origin.originCountry} value={origin.originCountry}>{origin.originCountry}</option>)}</select></label>
       <label>Origin city<input required value={originCity} onChange={(event) => { setOriginCity(event.target.value); setPreview(undefined); }} /></label>
       <label>Supplier<input value={supplierName} onChange={(event) => { setSupplierName(event.target.value); setPreview(undefined); }} placeholder="Optional" /></label>
@@ -239,11 +260,62 @@ export function SimulatorPage({ batches, events, onAction, onSelectBatch }: { ba
   </div>;
 }
 
-export function ReferencePage({ batches, onSelectBatch }: { batches: Batch[]; onSelectBatch: (id: string) => void }) {
-  const rows = Object.values(PRODUCTS);
+export function ReferencePage({ batches, products, onAddProduct, onSelectBatch }: { batches: Batch[]; products: Record<string, Product>; onAddProduct: (product: Product) => void; onSelectBatch: (id: string) => void }) {
+  const rows = Object.values(products);
+  const [showAddReference, setShowAddReference] = useState(false);
+  const [referenceName, setReferenceName] = useState('');
+  const [referenceGroup, setReferenceGroup] = useState<FoodGroup>('VEGETABLE');
+  const [baselineDays, setBaselineDays] = useState('7');
+  const [minTemp, setMinTemp] = useState('0');
+  const [maxTemp, setMaxTemp] = useState('4');
+  const [optimalMax, setOptimalMax] = useState('4');
+  const [transitSpeed, setTransitSpeed] = useState('500');
+  const [basePrice, setBasePrice] = useState('2');
+  const [climacteric, setClimacteric] = useState(false);
+  const [referenceError, setReferenceError] = useState('');
+
+  const addReference = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      const profile = createProductProfile({
+        name: referenceName,
+        foodGroup: referenceGroup,
+        baselineDays: Number(baselineDays),
+        safeRange: { minC: Number(minTemp), maxC: Number(maxTemp) },
+        optimalMaxTempC: Number(optimalMax),
+        climacteric,
+        averageTransitSpeedKmPerDay: Number(transitSpeed),
+        priceBasePerKg: Number(basePrice),
+      }, products);
+      onAddProduct(profile);
+      setReferenceName('');
+      setReferenceError('');
+      setShowAddReference(false);
+    } catch (profileError) {
+      setReferenceError(profileError instanceof Error ? profileError.message : 'Could not add food reference.');
+    }
+  };
+
   return <div className="page-stack">
     <SectionHeading eyebrow="Transparent by design" title="Reference & safety rules." detail="Crop assumptions, engine formulas, routing rules, and expired-food recovery order." />
-    <section className="panel"><div className="panel-title-row"><div><div className="eyebrow">Crop profiles</div><h3>Freshness and safe ranges</h3></div><span className="small-muted">Baseline + live inventory</span></div><div className="table-scroll"><table className="data-table"><thead><tr><th>Produce</th><th>Baseline shelf life</th><th>Safe temperature range</th><th>Climacteric</th><th>Live lots · open</th><th>Base market value</th></tr></thead><tbody>{rows.map((product) => <tr key={product.key}><td><strong>{product.name}</strong></td><td>{product.baselineDays} days</td><td>{product.safeRange.minC}–{product.safeRange.maxC}°C</td><td>{product.climacteric ? 'Yes' : 'No'}</td><td>{batches.filter((batch) => batch.productKey === product.key).map((batch) => <button className="text-link" key={batch.id} onClick={() => onSelectBatch(batch.id)}>{batch.id}</button>)}</td><td>QAR {product.priceBasePerKg.toFixed(2)}/kg</td></tr>)}</tbody></table></div></section>
+    <section className="panel">
+      <div className="panel-title-row"><div><div className="eyebrow">Food profiles · {rows.length}</div><h3>Handling parameters by food type</h3><p className="reference-note">Profiles here are used when assessing new lots. Changes are saved in this browser.</p></div><button className="apply-route-button reference-add-toggle" onClick={() => setShowAddReference((open) => !open)}>{showAddReference ? 'Close form' : '+ Add food reference'}</button></div>
+      {showAddReference && <form className="reference-form" onSubmit={addReference}>
+        <label>Food name<input required value={referenceName} onChange={(event) => setReferenceName(event.target.value)} placeholder="e.g. Fresh turkey" /></label>
+        <label>Food group<select value={referenceGroup} onChange={(event) => setReferenceGroup(event.target.value as FoodGroup)}>{Object.entries(FOOD_GROUP_LABELS).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></label>
+        <label>Baseline shelf life (days)<input required type="number" min="0.1" step="0.1" value={baselineDays} onChange={(event) => setBaselineDays(event.target.value)} /></label>
+        <label>Safe minimum (°C)<input required type="number" step="0.1" value={minTemp} onChange={(event) => setMinTemp(event.target.value)} /></label>
+        <label>Safe maximum (°C)<input required type="number" step="0.1" value={maxTemp} onChange={(event) => setMaxTemp(event.target.value)} /></label>
+        <label>Optimal maximum (°C)<input required type="number" step="0.1" value={optimalMax} onChange={(event) => setOptimalMax(event.target.value)} /></label>
+        <label>Average transit speed (km/day)<input required type="number" min="1" step="1" value={transitSpeed} onChange={(event) => setTransitSpeed(event.target.value)} /></label>
+        <label>Base value (QAR/kg)<input required type="number" min="0" step="0.01" value={basePrice} onChange={(event) => setBasePrice(event.target.value)} /></label>
+        <label className="reference-checkbox"><input type="checkbox" checked={climacteric} onChange={(event) => setClimacteric(event.target.checked)} /> Climacteric food (ethylene-sensitive)</label>
+        {referenceError && <p className="form-error" role="alert">{referenceError}</p>}
+        <p className="prototype-warning">Use verified local food-safety guidance for these values. A saved profile changes later lot assessments; this browser does not sync the reference to other users.</p>
+        <button className="apply-route-button" type="submit">Save food reference</button>
+      </form>}
+      <div className="table-scroll"><table className="data-table"><thead><tr><th>Food</th><th>Group</th><th>Baseline shelf life</th><th>Safe temperature range</th><th>Ethylene-sensitive</th><th>Live lots · open</th><th>Base market value</th></tr></thead><tbody>{rows.map((product) => <tr key={product.key}><td><strong>{product.name}{product.custom ? ' · custom' : ''}</strong></td><td>{FOOD_GROUP_LABELS[product.foodGroup]}</td><td>{product.baselineDays} days</td><td>{product.safeRange.minC}–{product.safeRange.maxC}°C</td><td>{product.climacteric ? 'Yes' : 'No'}</td><td>{batches.filter((batch) => batch.productKey === product.key).map((batch) => <button className="text-link" key={batch.id} onClick={() => onSelectBatch(batch.id)}>{batch.id}</button>)}</td><td>QAR {product.priceBasePerKg.toFixed(2)}/kg</td></tr>)}</tbody></table></div>
+    </section>
     <div className="reference-grid"><section className="panel"><div className="eyebrow">Engine formulas</div><h3>Calculated each sensor tick</h3><div className="formula-list">
       <div><strong>Dynamic shelf life</strong><code>baseline days × (1 − thermal penalty − ethylene penalty)</code><span>Thermal penalty = (temp − crop safe max) × 0.12/day above the maximum only. Ethylene penalty = ppm × 0.25 when &gt;0.5 ppm and crop is climacteric. Elapsed age is accounted for separately to calculate remaining days.</span></div>
       <div><strong>Maximum route range</strong><code>(DSL − 1 day safety buffer) × average transit speed km/day</code><span>A destination outside Rmax is not eligible for a fresh-food route.</span></div>

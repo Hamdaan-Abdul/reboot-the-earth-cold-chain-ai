@@ -29,6 +29,9 @@ npm run build
 - Pure calculation/routing logic under `src/engine`, discrete simulated streams under `src/sensors`, and page components under `src/pages`.
 - Temperature, ethylene, and traffic fault injection in the Anomaly Lab; each updates batch state and creates auditable anomaly/recommendation events.
 - Four produce stages, stage-aware destinations, positive-value financial checks, and safe expired-food recovery ordering. Landfill is reserved for unsafe or contaminated lots.
+- Manual intake starts with a food group (fruit, vegetable, meat, poultry, seafood, dairy, or other chilled food), then offers only profiles in that group. Reference profiles can be added with shelf-life, safe-temperature, ethylene, route-speed, and value assumptions; saved profiles are available for later lot assessments in the same browser.
+- Operators can approve a suggested route, choose a different destination within the modeled safe travel range, or hold a lot for inspection and record a note. Choices appear in the local activity log; they do not trigger real shipments.
+- The home page links directly to the full recent-activity view and summarizes estimated net recovery value and potential food kept in use from current lot data.
 - A concise priority queue puts operator decisions first, with full inventory and technical route tools kept separate.
 - Simulated telemetry charts identify axes and product temperature, humidity, and ethylene limits. Each lot summary shows current evidence, safe limits, estimated freshness, arrival likelihood, and modeled recovery value before expandable sensor, traceability, and activity details.
 - The prototype labels modeled values as illustrative, displays update/offline/storage status, and records a typed operator display name for simulated approvals. That name is not verified; approvals and activity history are saved only in the current browser and are not an immutable or shared audit record.

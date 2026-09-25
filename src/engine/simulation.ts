@@ -1,5 +1,5 @@
 import type { AuditEvent, Batch } from '../types';
-import { updateBatchCore } from './calculations';
+import { operatorRouteOptions, updateBatchCore } from './calculations';
 import { DESTINATIONS } from './products';
 import { sampleSensors } from '../sensors';
 
@@ -106,8 +106,8 @@ export function triggerTrafficDelay(batch: Batch): Batch {
   }));
 }
 
-export function confirmDispatch(batch: Batch, operatorName = 'Local operator'): Batch {
-  const routed = updateBatchCore(batch);
+export function confirmDispatch(batch: Batch, operatorName = 'Local operator', destinationOverride?: Batch['assignedDestination']): Batch {
+  const routed = updateBatchCore(batch, 'long-range', destinationOverride);
   const approved: Batch = {
     ...routed,
     dispatchConfirmed: true,
@@ -118,6 +118,58 @@ export function confirmDispatch(batch: Batch, operatorName = 'Local operator'): 
     lastActionReason: `${operatorName} approved the simulated recommendation for ${routed.assignedDestination.name}, ${routed.assignedDestination.country}. No real booking or dispatch was made.`,
   };
   return appendLog(approved, `Simulated route approved by ${operatorName}: ${routed.assignedDestination.name}. No real dispatch.`);
+}
+
+export type OperatorDecision = 'APPROVED_SUGGESTION' | 'ALTERNATE_ROUTE' | 'HOLD_FOR_INSPECTION';
+
+export function recordOperatorDecision(
+  batch: Batch,
+  operatorName: string,
+  decision: OperatorDecision,
+  note = '',
+  destinationId?: string,
+): Batch {
+  const trimmedName = operatorName.trim();
+  if (!trimmedName) throw new Error('Enter your name to record this decision.');
+  if (batch.contaminated && decision !== 'HOLD_FOR_INSPECTION') {
+    throw new Error('A lot flagged for possible contamination must be checked by a qualified person before routing.');
+  }
+  if (decision === 'HOLD_FOR_INSPECTION') {
+    const held: Batch = {
+      ...batch,
+      dispatchConfirmed: false,
+      status: 'PENDING_APPROVAL',
+      operatorDecision: decision,
+      operatorNote: note.trim(),
+      lastAction: 'Held for inspection',
+      lastActionReason: note.trim() || `${trimmedName} asked for this lot to be checked before a route is approved.`,
+    };
+    return appendLog(held, `Operator hold recorded by ${trimmedName}${note.trim() ? `: ${note.trim()}` : '.'}`);
+  }
+
+  const destination = decision === 'ALTERNATE_ROUTE'
+    ? operatorRouteOptions(batch).find((option) => option.id === destinationId)
+    : undefined;
+  if (decision === 'ALTERNATE_ROUTE' && !destination) {
+    throw new Error('Choose a destination that is within this lot’s modeled safe travel range.');
+  }
+  const routed = updateBatchCore(
+    destination ? { ...batch, flightStatus: undefined, flight: undefined } : batch,
+    'shortest-positive',
+    destination,
+  );
+  const approved: Batch = {
+    ...confirmDispatch(routed, trimmedName, destination),
+    operatorDecision: decision,
+    operatorNote: note.trim(),
+    lastAction: decision === 'ALTERNATE_ROUTE' ? `Operator-selected route · ${routed.assignedDestination.name}` : 'Suggested route approved in demo',
+    lastActionReason: decision === 'ALTERNATE_ROUTE'
+      ? `${trimmedName} selected ${routed.assignedDestination.name}.${note.trim() ? ` Note: ${note.trim()}` : ''} Demo only; no real dispatch was made.`
+      : `${trimmedName} approved the suggested route.${note.trim() ? ` Note: ${note.trim()}` : ''} Demo only; no real dispatch was made.`,
+  };
+  return appendLog(approved, decision === 'ALTERNATE_ROUTE'
+    ? `Operator selected route to ${routed.assignedDestination.name} · ${trimmedName}${note.trim() ? ` · ${note.trim()}` : ''}`
+    : `Suggested route approved by ${trimmedName}${note.trim() ? ` · ${note.trim()}` : ''}`);
 }
 
 export { DESTINATIONS };

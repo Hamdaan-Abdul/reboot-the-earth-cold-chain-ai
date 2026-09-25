@@ -1,16 +1,31 @@
 import type { Destination, FlightSchedule, Product } from '../types';
 
+export const FOOD_GROUP_LABELS: Record<Product['foodGroup'], string> = {
+  FRUIT: 'Fruit',
+  VEGETABLE: 'Vegetable',
+  MEAT: 'Meat',
+  POULTRY: 'Poultry',
+  SEAFOOD: 'Seafood',
+  DAIRY: 'Dairy',
+  OTHER: 'Other food',
+};
+
 export const PRODUCTS: Record<string, Product> = {
-  banana: { key: 'banana', name: 'Banana', baselineDays: 18, safeRange: { minC: 12, maxC: 14 }, optimalMaxTempC: 14, climacteric: true, averageTransitSpeedKmPerDay: 600, priceBasePerKg: 1.2 },
-  tomato: { key: 'tomato', name: 'Tomato', baselineDays: 12, safeRange: { minC: 10, maxC: 14 }, optimalMaxTempC: 14, climacteric: true, averageTransitSpeedKmPerDay: 550, priceBasePerKg: 1.5 },
-  mango: { key: 'mango', name: 'Mango', baselineDays: 21, safeRange: { minC: 12, maxC: 15 }, optimalMaxTempC: 15, climacteric: true, averageTransitSpeedKmPerDay: 500, priceBasePerKg: 2.8 },
-  lettuce: { key: 'lettuce', name: 'Lettuce', baselineDays: 10, safeRange: { minC: 1, maxC: 6 }, optimalMaxTempC: 6, climacteric: false, averageTransitSpeedKmPerDay: 700, priceBasePerKg: 1.1 },
-  cucumber: { key: 'cucumber', name: 'Cucumber', baselineDays: 14, safeRange: { minC: 7, maxC: 10 }, optimalMaxTempC: 10, climacteric: false, averageTransitSpeedKmPerDay: 650, priceBasePerKg: 1 },
-  avocado: { key: 'avocado', name: 'Avocado', baselineDays: 18, safeRange: { minC: 5, maxC: 8 }, optimalMaxTempC: 8, climacteric: true, averageTransitSpeedKmPerDay: 560, priceBasePerKg: 2.4 },
-  orange: { key: 'orange', name: 'Orange', baselineDays: 28, safeRange: { minC: 3, maxC: 8 }, optimalMaxTempC: 8, climacteric: false, averageTransitSpeedKmPerDay: 640, priceBasePerKg: 1.3 },
-  grapes: { key: 'grapes', name: 'Table grapes', baselineDays: 16, safeRange: { minC: -1, maxC: 2 }, optimalMaxTempC: 2, climacteric: false, averageTransitSpeedKmPerDay: 680, priceBasePerKg: 2.1 },
-  blueberry: { key: 'blueberry', name: 'Blueberry', baselineDays: 10, safeRange: { minC: 0, maxC: 2 }, optimalMaxTempC: 2, climacteric: false, averageTransitSpeedKmPerDay: 700, priceBasePerKg: 4.2 },
-  pepper: { key: 'pepper', name: 'Bell pepper', baselineDays: 14, safeRange: { minC: 7, maxC: 10 }, optimalMaxTempC: 10, climacteric: false, averageTransitSpeedKmPerDay: 650, priceBasePerKg: 1.8 },
+  banana: { key: 'banana', name: 'Banana', foodGroup: 'FRUIT', baselineDays: 18, safeRange: { minC: 12, maxC: 14 }, optimalMaxTempC: 14, climacteric: true, averageTransitSpeedKmPerDay: 600, priceBasePerKg: 1.2 },
+  tomato: { key: 'tomato', name: 'Tomato', foodGroup: 'VEGETABLE', baselineDays: 12, safeRange: { minC: 10, maxC: 14 }, optimalMaxTempC: 14, climacteric: true, averageTransitSpeedKmPerDay: 550, priceBasePerKg: 1.5 },
+  mango: { key: 'mango', name: 'Mango', foodGroup: 'FRUIT', baselineDays: 21, safeRange: { minC: 12, maxC: 15 }, optimalMaxTempC: 15, climacteric: true, averageTransitSpeedKmPerDay: 500, priceBasePerKg: 2.8 },
+  lettuce: { key: 'lettuce', name: 'Lettuce', foodGroup: 'VEGETABLE', baselineDays: 10, safeRange: { minC: 1, maxC: 6 }, optimalMaxTempC: 6, climacteric: false, averageTransitSpeedKmPerDay: 700, priceBasePerKg: 1.1 },
+  cucumber: { key: 'cucumber', name: 'Cucumber', foodGroup: 'VEGETABLE', baselineDays: 14, safeRange: { minC: 7, maxC: 10 }, optimalMaxTempC: 10, climacteric: false, averageTransitSpeedKmPerDay: 650, priceBasePerKg: 1 },
+  avocado: { key: 'avocado', name: 'Avocado', foodGroup: 'FRUIT', baselineDays: 18, safeRange: { minC: 5, maxC: 8 }, optimalMaxTempC: 8, climacteric: true, averageTransitSpeedKmPerDay: 560, priceBasePerKg: 2.4 },
+  orange: { key: 'orange', name: 'Orange', foodGroup: 'FRUIT', baselineDays: 28, safeRange: { minC: 3, maxC: 8 }, optimalMaxTempC: 8, climacteric: false, averageTransitSpeedKmPerDay: 640, priceBasePerKg: 1.3 },
+  grapes: { key: 'grapes', name: 'Table grapes', foodGroup: 'FRUIT', baselineDays: 16, safeRange: { minC: -1, maxC: 2 }, optimalMaxTempC: 2, climacteric: false, averageTransitSpeedKmPerDay: 680, priceBasePerKg: 2.1 },
+  blueberry: { key: 'blueberry', name: 'Blueberry', foodGroup: 'FRUIT', baselineDays: 10, safeRange: { minC: 0, maxC: 2 }, optimalMaxTempC: 2, climacteric: false, averageTransitSpeedKmPerDay: 700, priceBasePerKg: 4.2 },
+  pepper: { key: 'pepper', name: 'Bell pepper', foodGroup: 'VEGETABLE', baselineDays: 14, safeRange: { minC: 7, maxC: 10 }, optimalMaxTempC: 10, climacteric: false, averageTransitSpeedKmPerDay: 650, priceBasePerKg: 1.8 },
+  chicken: { key: 'chicken', name: 'Fresh chicken', foodGroup: 'POULTRY', baselineDays: 4, safeRange: { minC: 0, maxC: 4 }, optimalMaxTempC: 4, climacteric: false, averageTransitSpeedKmPerDay: 500, priceBasePerKg: 4.8 },
+  beef: { key: 'beef', name: 'Fresh beef', foodGroup: 'MEAT', baselineDays: 6, safeRange: { minC: 0, maxC: 4 }, optimalMaxTempC: 4, climacteric: false, averageTransitSpeedKmPerDay: 500, priceBasePerKg: 8.5 },
+  salmon: { key: 'salmon', name: 'Fresh salmon', foodGroup: 'SEAFOOD', baselineDays: 3, safeRange: { minC: 0, maxC: 2 }, optimalMaxTempC: 2, climacteric: false, averageTransitSpeedKmPerDay: 450, priceBasePerKg: 12 },
+  milk: { key: 'milk', name: 'Fresh milk', foodGroup: 'DAIRY', baselineDays: 14, safeRange: { minC: 0, maxC: 4 }, optimalMaxTempC: 4, climacteric: false, averageTransitSpeedKmPerDay: 500, priceBasePerKg: 1.8 },
+  prepared: { key: 'prepared', name: 'Prepared chilled food', foodGroup: 'OTHER', baselineDays: 5, safeRange: { minC: 0, maxC: 4 }, optimalMaxTempC: 4, climacteric: false, averageTransitSpeedKmPerDay: 450, priceBasePerKg: 3.5 },
 };
 
 // Representative schedules for the prototype. These are illustrative, not a live airline feed.

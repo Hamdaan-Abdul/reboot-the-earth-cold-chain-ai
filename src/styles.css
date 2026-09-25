@@ -400,6 +400,35 @@ select { min-width: 125px; padding: 9px 28px 9px 10px; border: 1px solid rgba(25
   .workflow-stage.has-connector::after { content: none; }
   .batch-cards { grid-template-columns: 1fr; }
 }
+.impact-widget { padding: 22px; border: 1px solid rgba(145,205,151,.2); border-radius: 13px; background: linear-gradient(115deg, rgba(41,83,49,.2), rgba(17,24,20,.96) 70%); }
+.impact-widget-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.impact-widget-heading h3 { margin: 6px 0 0; color: var(--text); font: 650 18px Manrope,sans-serif; }
+.impact-widget-heading > small, .impact-widget-metrics span { color: var(--muted); font-size: 10px; }
+.impact-widget-metrics { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.impact-widget-metrics > div { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 13px; border: 1px solid rgba(255,255,255,.07); border-radius: 9px; background: rgba(0,0,0,.12); }
+.impact-widget-metrics small { color: #a2b0a4; font-size: 11px; }
+.impact-widget-metrics strong { color: #d8f0d9; font: 700 25px Manrope,sans-serif; letter-spacing: -.5px; }
+.impact-widget-metrics span { line-height: 1.5; }
+.operator-record { margin: 12px 0; padding: 12px; border: 1px solid rgba(140,196,146,.2); border-radius: 8px; background: rgba(140,196,146,.05); }
+.operator-record strong { display: block; margin-top: 5px; color: var(--text); font-size: 12px; }
+.operator-record p { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.approver-label select, .approver-label textarea { width: 100%; min-height: 36px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); }
+.approver-label textarea { resize: vertical; }
+.reference-form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin: 16px 0; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-raised); }
+.reference-form label { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 11px; }
+.reference-form input, .reference-form select { width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); }
+.reference-form .reference-checkbox { flex-direction: row; align-items: center; }
+.reference-form .reference-checkbox input { width: 16px; min-height: 16px; }
+.reference-form .form-error, .reference-form .prototype-warning, .reference-form > button { grid-column: 1 / -1; }
+.reference-add-toggle { width: auto; text-align: center; white-space: nowrap; }
+:root[data-theme='light'] .impact-widget { background: linear-gradient(115deg, #edf7ee, #fff 75%); border-color: rgba(63,125,72,.22); }
+:root[data-theme='light'] .impact-widget-heading h3 { color: #26372b; }
+:root[data-theme='light'] .impact-widget-metrics > div { background: rgba(255,255,255,.7); border-color: rgba(40,65,47,.12); }
+:root[data-theme='light'] .impact-widget-metrics small { color: #526258; }
+:root[data-theme='light'] .impact-widget-metrics strong { color: #28653a; }
+:root[data-theme='light'] .reference-form { background: #f7faf7; }
+:root[data-theme='light'] .operator-record strong { color: #26372b; }
+
 @media (max-width: 760px) {
   .app-shell { display: block; }
   .sidebar { width: 100%; min-width: 0; min-height: auto; padding: 15px 15px 10px; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -675,6 +704,12 @@ select { min-width: 125px; padding: 9px 28px 9px 10px; border: 1px solid rgba(25
    .panel { padding: 17px; }
    .topbar { min-height: 56px; }
    .home-action-row { padding-right: 2px; padding-left: 2px; }
+   .impact-widget { padding: 17px; }
+   .impact-widget-heading { align-items: flex-start; flex-direction: column; }
+   .impact-widget-metrics { grid-template-columns: 1fr; }
+   .impact-widget-metrics strong { font-size: 22px; }
+   .reference-form { grid-template-columns: 1fr; padding: 12px; }
+   .panel-title-row:has(.reference-add-toggle) { align-items: flex-start; flex-direction: column; }
    .drawer-header { padding: 18px 17px 14px; }
    .drawer-scroll { padding-right: 17px; padding-left: 17px; }
    .drawer-actions { padding: 12px 17px; }

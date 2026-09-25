@@ -1,4 +1,4 @@
-import type { Batch, SensorReading } from '../types';
+import type { Batch, Product, SensorReading } from '../types';
 import { classifyByDSL, updateBatchCore } from './calculations';
 import { CATEGORY_LABELS, DESTINATIONS, PRODUCTS } from './products';
 
@@ -52,6 +52,7 @@ export function makeInitialBatches(): Batch[] {
       id: `LOT-${260901 + index}`,
       productKey: product.key,
       productName: product.name,
+      foodGroup: product.foodGroup,
       category: 'RAW',
       weightKg: spec.weightKg,
       tempC: spec.tempC,
@@ -69,6 +70,8 @@ export function makeInitialBatches(): Batch[] {
       safeRange: product.safeRange,
       optimalMaxTempC: product.optimalMaxTempC,
       climacteric: product.climacteric,
+      averageTransitSpeedKmPerDay: product.averageTransitSpeedKmPerDay,
+      priceBasePerKg: product.priceBasePerKg,
       assignedDestination: DESTINATIONS[0],
       dslDays: 0,
       rMaxKm: 0,
@@ -122,6 +125,7 @@ export function makeInitialBatches(): Batch[] {
 export type ManualBatchInput = {
   id: string;
   productKey: string;
+  foodGroup?: Batch['foodGroup'];
   originCity: string;
   originCountry: string;
   supplierName: string;
@@ -131,19 +135,39 @@ export type ManualBatchInput = {
   ethylenePpm: number;
 };
 
-export function createManualBatch(input: ManualBatchInput, existing: Batch[]): Batch {
+export type ProductProfileInput = Omit<Product, 'key' | 'custom'>;
+
+export function createProductProfile(input: ProductProfileInput, existing: Record<string, Product> = PRODUCTS): Product {
+  const name = input.name.trim();
+  const key = `custom-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`.replace(/-$/, '');
+  if (!name) throw new Error('Enter a food name.');
+  if (existing[key]) throw new Error('A reference for this food already exists.');
+  if (![input.baselineDays, input.safeRange.minC, input.safeRange.maxC, input.optimalMaxTempC, input.averageTransitSpeedKmPerDay, input.priceBasePerKg].every(Number.isFinite)
+    || input.baselineDays <= 0
+    || input.safeRange.minC > input.safeRange.maxC
+    || input.optimalMaxTempC < input.safeRange.minC
+    || input.optimalMaxTempC > input.safeRange.maxC
+    || input.averageTransitSpeedKmPerDay <= 0
+    || input.priceBasePerKg < 0) {
+    throw new Error('Check the shelf life, temperature range, transit speed, and price.');
+  }
+  return { ...input, key, name, custom: true };
+}
+
+export function createManualBatch(input: ManualBatchInput, existing: Batch[], productProfiles: Record<string, Product> = PRODUCTS): Batch {
   const id = input.id.trim().toUpperCase();
   if (!id) throw new Error('Enter a lot code.');
   if (existing.some((batch) => batch.id.toUpperCase() === id || batch.supplierLotCode.toUpperCase() === id)) {
     throw new Error('That lot code is already in use. Choose a unique code.');
   }
+
   if (![input.weightKg, input.tempC, input.ageDays, input.ethylenePpm].every(Number.isFinite)
     || input.weightKg <= 0 || input.ageDays < 0 || input.ethylenePpm < 0) {
     throw new Error('Weight must be positive; age and ethylene cannot be negative; all measurements must be numbers.');
   }
   const template = existing.find((batch) => batch.originCountry === input.originCountry)
     ?? existing[0];
-  const product = PRODUCTS[input.productKey];
+  const product = productProfiles[input.productKey];
   if (!template || !product || !input.originCountry.trim() || !input.originCity.trim()) throw new Error('A valid produce type, origin country, and origin city are required.');
 
   const batch: Batch = {
@@ -152,6 +176,7 @@ export function createManualBatch(input: ManualBatchInput, existing: Batch[]): B
     isManual: true,
     productKey: product.key,
     productName: product.name,
+    foodGroup: product.foodGroup,
     originCity: input.originCity.trim() || template.originCity,
     weightKg: input.weightKg,
     tempC: input.tempC,
@@ -161,6 +186,8 @@ export function createManualBatch(input: ManualBatchInput, existing: Batch[]): B
     safeRange: product.safeRange,
     optimalMaxTempC: product.optimalMaxTempC,
     climacteric: product.climacteric,
+    averageTransitSpeedKmPerDay: product.averageTransitSpeedKmPerDay,
+    priceBasePerKg: product.priceBasePerKg,
     supplierName: input.supplierName.trim() || 'Manually entered supplier',
     supplierLotCode: id,
     packedAt: new Date(Date.now() - input.ageDays * 86400000).toISOString(),

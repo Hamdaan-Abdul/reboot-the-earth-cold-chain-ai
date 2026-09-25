@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { AuditEvent, Batch, Category } from '../types';
-import { CATEGORY_COLORS, CATEGORY_LABELS, FLIGHTS } from '../engine';
+import { CATEGORY_COLORS, CATEGORY_LABELS, FLIGHTS, operatorRouteOptions } from '../engine';
+import type { OperatorDecision } from '../engine';
 import { SensorChart } from './Charts';
 
 export function CategoryBadge({ category }: { category: Category }) {
@@ -47,20 +48,25 @@ export function BatchDetailDrawer({
   events,
   onClose,
   onAction,
-  onApplyRecommendation,
+  onRecordDecision,
 }: {
   batch: Batch;
   events: AuditEvent[];
   onClose: () => void;
   onAction: (id: string, action: 'refrigeration' | 'ethylene' | 'traffic') => void;
-  onApplyRecommendation: (id: string, operatorName: string) => void;
+  onRecordDecision: (id: string, operatorName: string, decision: OperatorDecision, note: string, destinationId?: string) => void;
 }) {
   const flight = batch.flight;
   const flightSchedule = flight ? FLIGHTS.find((candidate) => candidate.id === flight.id) : undefined;
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [operatorName, setOperatorName] = useState('');
+  const [decision, setDecision] = useState<OperatorDecision>('APPROVED_SUGGESTION');
+  const [operatorDestinationId, setOperatorDestinationId] = useState('');
+  const [operatorNote, setOperatorNote] = useState('');
+  const [decisionError, setDecisionError] = useState('');
+  const routeOptions = operatorRouteOptions(batch);
   const lastReading = batch.history.at(-1);
-  const statusLabel = batch.contaminated ? 'Hold · safety check required' : batch.anomalyReason ? 'Alert · review required' : batch.dispatchConfirmed
+  const statusLabel = batch.contaminated ? 'Hold · safety check required' : batch.operatorDecision === 'HOLD_FOR_INSPECTION' ? 'Held · inspection requested' : batch.anomalyReason ? 'Alert · review required' : batch.dispatchConfirmed
     ? batch.flightStatus === 'IN_TRANSIT' ? 'Approved in demo · in transit' : 'Approved in demo'
     : batch.status === 'ANOMALY_DETECTED' ? 'Alert · review required' : batch.status === 'PENDING_APPROVAL' ? 'Route needs approval' : 'No current alert';
 
@@ -107,6 +113,7 @@ export function BatchDetailDrawer({
           </div>
           <p className="evidence-footnote">Estimate uses illustrative product, route, and market assumptions; it is not a guarantee.</p>
         </section>
+        {batch.operatorDecision && <section className="operator-record"><div className="eyebrow">Your last decision</div><strong>{batch.operatorDecision === 'HOLD_FOR_INSPECTION' ? 'Held for inspection' : batch.operatorDecision === 'ALTERNATE_ROUTE' ? 'Alternate route selected' : 'Suggested route approved'}</strong>{batch.operatorNote && <p>{batch.operatorNote}</p>}</section>}
         {flight && <details className="drawer-disclosure"><summary>Sample flight routine · {flight.flightNumber} · {batch.flightStatus?.replace('_', ' ') ?? 'scheduled'}</summary><div className="disclosure-content"><p>{flight.originAirportCode} → {flight.destinationAirportCode} · {flight.departureLocal} · {flight.durationHours.toFixed(1)} hours · {flight.daysOfWeek}</p><p>{flight.airline}. Schedule, capacity, and reliability are sample values, not a live airline feed.</p><p>Status: {batch.dispatchConfirmed ? batch.flightStatus === 'IN_TRANSIT' ? 'simulated flight in transit' : 'route approved; simulated flight will progress' : 'not approved; no movement in simulation'}.</p>{flightSchedule && <small>Illustrative capacity remaining: {(flightSchedule.cargoCapacityKg - flightSchedule.cargoBookedKg).toLocaleString()} kg · modeled on-time likelihood {Math.round(flight.onTimeProbability * 100)}%</small>}</div></details>}
         <details className="drawer-disclosure"><summary>Sensor readings & history</summary><div className="disclosure-content">
           <p>Last simulated reading: {lastReading?.time ?? 'Not available'}</p>
@@ -121,8 +128,23 @@ export function BatchDetailDrawer({
       </div>
       <div className="drawer-actions">
         <label className="approver-label">Name for activity log <span>(not verified)</span><input value={operatorName} onChange={(event) => updateOperatorName(event.target.value)} placeholder="Your name" /></label>
-        <button className="apply-route-button" onClick={() => onApplyRecommendation(batch.id, operatorName.trim())} disabled={batch.dispatchConfirmed || batch.contaminated || !operatorName.trim()}>{batch.contaminated ? 'Approval blocked · safety check first' : batch.dispatchConfirmed ? 'Approved in this demo' : 'Approve suggested route · demo only'}</button>
-        <p className="prototype-warning">This approval is saved in this browser only. It does not book or dispatch a shipment.</p>
+        <label className="approver-label">Your decision<select value={decision} onChange={(event) => { setDecision(event.target.value as OperatorDecision); setDecisionError(''); }}>
+          <option value="APPROVED_SUGGESTION" disabled={batch.contaminated}>Use the suggested route</option>
+          <option value="ALTERNATE_ROUTE" disabled={batch.contaminated || !routeOptions.length}>Choose another safe route</option>
+          <option value="HOLD_FOR_INSPECTION">Hold for inspection</option>
+        </select></label>
+        {decision === 'ALTERNATE_ROUTE' && <label className="approver-label">Choose destination<select value={operatorDestinationId || routeOptions[0]?.id || ''} onChange={(event) => setOperatorDestinationId(event.target.value)}>{routeOptions.map((option) => <option key={option.id} value={option.id}>{option.name} · {Math.round(option.distanceKm)} km</option>)}</select></label>}
+        <label className="approver-label">Note or reason <span>(optional)</span><textarea value={operatorNote} onChange={(event) => setOperatorNote(event.target.value)} placeholder="Why this choice, or what should be checked?" rows={2} /></label>
+        {decisionError && <p className="form-error" role="alert">{decisionError}</p>}
+        <button className="apply-route-button" onClick={() => {
+          try {
+            onRecordDecision(batch.id, operatorName, decision, operatorNote, decision === 'ALTERNATE_ROUTE' ? operatorDestinationId || routeOptions[0]?.id : undefined);
+            setDecisionError('');
+          } catch (error) {
+            setDecisionError(error instanceof Error ? error.message : 'Could not record this decision.');
+          }
+        }} disabled={batch.dispatchConfirmed || !operatorName.trim() || (batch.contaminated && decision !== 'HOLD_FOR_INSPECTION') || (decision === 'ALTERNATE_ROUTE' && !routeOptions.length)}>{batch.dispatchConfirmed ? 'Decision already recorded' : decision === 'HOLD_FOR_INSPECTION' ? 'Record hold for inspection' : decision === 'ALTERNATE_ROUTE' ? 'Record my route choice · demo only' : batch.contaminated ? 'Safety check required before approval' : 'Record approval · demo only'}</button>
+        <p className="prototype-warning">Your choice is recorded in this browser only. No real booking, dispatch, or partner handoff occurs.</p>
       </div>
     </aside>
   </div>;

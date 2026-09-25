@@ -17,6 +17,7 @@ export type DestinationType =
   | 'LANDFILL';
 
 export type RouteMode = 'AIR' | 'ROAD' | 'SEA';
+export type FoodGroup = 'FRUIT' | 'VEGETABLE' | 'MEAT' | 'POULTRY' | 'SEAFOOD' | 'DAIRY' | 'OTHER';
 export type FlightStatus = 'SCHEDULED' | 'BOARDING' | 'IN_TRANSIT' | 'ARRIVED';
 
 export type FlightSchedule = {
@@ -60,12 +61,14 @@ export type Destination = {
 export type Product = {
   key: string;
   name: string;
+  foodGroup: FoodGroup;
   baselineDays: number;
   safeRange: { minC: number; maxC: number };
   optimalMaxTempC: number;
   climacteric: boolean;
   averageTransitSpeedKmPerDay: number;
   priceBasePerKg: number;
+  custom?: boolean;
 };
 
 export type SensorReading = {
@@ -81,6 +84,7 @@ export type Batch = {
   isManual?: boolean;
   productKey: string;
   productName: string;
+  foodGroup: FoodGroup;
   category: Category;
   weightKg: number;
   tempC: number;
@@ -98,6 +102,8 @@ export type Batch = {
   safeRange: { minC: number; maxC: number };
   optimalMaxTempC: number;
   climacteric: boolean;
+  averageTransitSpeedKmPerDay: number;
+  priceBasePerKg: number;
   assignedDestination: Destination;
   dslDays: number;
   rMaxKm: number;
@@ -120,6 +126,8 @@ export type Batch = {
   flightOriginLng?: number;
   flightHoursUntilDeparture?: number;
   flightHoursRemaining?: number;
+  operatorNote?: string;
+  operatorDecision?: 'APPROVED_SUGGESTION' | 'ALTERNATE_ROUTE' | 'HOLD_FOR_INSPECTION';
   lastAction: string;
   lastActionReason: string;
   contaminated: boolean;

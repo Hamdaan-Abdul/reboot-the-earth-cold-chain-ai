@@ -150,3 +150,12 @@ export type AuditEvent = {
   message: string;
   kind: 'INFO' | 'WARNING' | 'SUCCESS' | 'CRITICAL';
 };
+
+export type CalibrationCheck = {
+  sensor: 'temperature' | 'humidity' | 'ethylene';
+  lotId: string;
+  referenceValue: number;
+  observedValue: number;
+  error: number;
+  checkedAt: string;
+};

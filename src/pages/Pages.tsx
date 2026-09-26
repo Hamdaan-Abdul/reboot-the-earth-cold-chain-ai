@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import type { AuditEvent, Batch, Category, FoodGroup, Product } from '../types';
-import { CATEGORY_COLORS, CATEGORY_LABELS, createManualBatch, createProductProfile, DESTINATIONS, FLIGHTS, FOOD_GROUP_LABELS, PRODUCTS } from '../engine';
+import type { AuditEvent, Batch, CalibrationCheck, Category, FoodGroup, Product } from '../types';
+import { CATEGORY_COLORS, CATEGORY_LABELS, createManualBatch, createProductProfile, DESTINATIONS, FLIGHTS, FOOD_GROUP_LABELS, PRODUCTS, recommendPreCoolingTarget, type RouteLearningRecord } from '../engine';
 import { EthyleneChart, HumidityChart, RouteMap, SensorChart, SpeedChart, TemperatureChart } from '../components/Charts';
 import { CategoryBadge, EventList, FoodGroupBadge, SectionHeading } from '../components/Shared';
 import { fetchAmbientWeather, fetchRoadRoute, type AmbientWeather, type RoadRoute } from '../sources/live';
@@ -310,7 +310,7 @@ export function PipelinePage({ batches, onSelectBatch }: { batches: Batch[]; onS
 
 export function SimulatorPage({ batches, events, onAction, onSelectBatch }: { batches: Batch[]; events: AuditEvent[]; onAction: (id: string, action: 'refrigeration' | 'ethylene' | 'traffic') => void; onSelectBatch: (id: string) => void }) {
   const [selectedId, setSelectedId] = useState(batches[0]?.id ?? '');
-  const selected = batches.find((batch) => batch.id === selectedId) ?? batches[0];
+  const selected = batches.find((batch) => batch.id === selectedId);
   const [query, setQuery] = useState('');
   const matchingBatches = batches.filter((batch) => `${batch.id} ${batch.productName} ${batch.supplierLotCode} ${batch.foodGroup} ${FOOD_GROUP_LABELS[batch.foodGroup]}`.toLowerCase().includes(query.toLowerCase()));
   return <div className="page-stack">
@@ -409,5 +409,117 @@ export function ReferencePage({ batches, products, onAddProduct, onSelectBatch }
     </div></section>
     <section className="panel"><div className="eyebrow">When time is short</div><h3>Expired food recovery hierarchy</h3><p className="reference-note">Safe, uncontaminated lots are routed in strict priority order. Contaminated food bypasses recovery and goes to landfill only.</p><ol className="recovery-list">{[['01', 'Redistribution', 'Food banks · surplus apps'], ['02', 'Animal feed', 'Licensed feed partners'], ['03', 'Industrial reuse', 'Biodiesel · oils'], ['04', 'Composting', 'Municipal organics'], ['05', 'Anaerobic digestion', 'Biogas recovery'], ['06', 'Landfill', 'Unsafe or contaminated only']].map(([number, title, detail]) => <li key={number}><b>{number}</b><span><strong>{title}</strong><small>{detail}</small></span></li>)}</ol></section></div>
     <div className="summer-callout"><span>☼</span><div><strong>Qatar summer operating note</strong><p>Route recommendations account for extreme ambient heat and weather heat index. Prioritize early-morning or night transport windows for heat-sensitive produce.</p></div></div>
+  </div>;
+}
+
+export function PredictionsPage({ batches, learning, onApplyPreCooling }: {
+  batches: Batch[];
+  learning: RouteLearningRecord[];
+  onApplyPreCooling: (batchId: string, targetC: number, routeName: string) => void;
+}) {
+  const eligibleLots = batches.filter((batch) => !batch.contaminated && batch.category !== 'EXPIRED');
+  const [selectedId, setSelectedId] = useState(eligibleLots[0]?.id ?? '');
+  const selected = eligibleLots.find((batch) => batch.id === selectedId) ?? eligibleLots[0];
+  const routeKey = selected?.flight?.id ?? selected?.assignedDestination.id;
+  const matchingRecords = learning.filter((record) => record.routeKey === routeKey && record.foodGroup === selected?.foodGroup);
+  const learnedRoute = matchingRecords[0];
+  const targetTempC = selected && learnedRoute
+    ? recommendPreCoolingTarget(selected.safeRange, selected.optimalMaxTempC, learnedRoute)
+    : undefined;
+  return <div className="page-stack">
+    <SectionHeading eyebrow="Learning from completed lots · this browser" title="Route predictions & pre-cooling" detail="Completed simulated trips add route-specific temperature observations. Suggestions remain local and advisory; they never control refrigeration hardware." />
+    <section className="panel prediction-panel">
+      <div className="prediction-selector"><label>Choose a lot<select value={eligibleLots.some((batch) => batch.id === selectedId) ? selectedId : eligibleLots[0]?.id ?? ''} onChange={(event) => setSelectedId(event.target.value)}>{eligibleLots.map((batch) => <option key={batch.id} value={batch.id}>{batch.id} · {batch.productName} · {batch.assignedDestination.name}</option>)}</select></label>
+        {selected && <div className="prediction-selected"><strong>{selected.productName} · {selected.id}</strong><span>{FOOD_GROUP_LABELS[selected.foodGroup]} · {selected.assignedDestination.name} · {selected.assignedDestination.routeMode}</span></div>}
+      </div>
+      {selected && learnedRoute && targetTempC !== undefined ? <div className="prediction-result">
+        <div className="prediction-evidence"><div className="eyebrow">Observed route history · simulated sensors</div><h3>{learnedRoute.routeName}</h3><p>{learnedRoute.sampleCount} completed {FOOD_GROUP_LABELS[learnedRoute.foodGroup].toLowerCase()} trip{learnedRoute.sampleCount === 1 ? '' : 's'} · mean peak rise {learnedRoute.averageTempRiseC.toFixed(1)}°C · largest rise {learnedRoute.maxTempRiseC.toFixed(1)}°C.</p><small>Most recent observation · {new Date(learnedRoute.lastObservedAt).toLocaleString()} · lot {learnedRoute.lastBatchId}</small>{learnedRoute.sampleCount < 3 && <p className="prediction-caution">Limited evidence: fewer than 3 completed trips. Treat this advisory as a demo estimate, not a validated route forecast.</p>}</div>
+        <div className="pre-cool-recommendation"><span>Suggested pre-cool target</span><strong>{targetTempC.toFixed(1)}°C</strong><small>Allowed range for this food: {selected.safeRange.minC}–{selected.safeRange.maxC}°C. Target is clamped to the food profile and based on the learned average route temperature rise.</small>
+          <button className="apply-route-button" disabled={selected.tempC <= targetTempC} onClick={() => onApplyPreCooling(selected.id, targetTempC, learnedRoute.routeName)}>{selected.tempC <= targetTempC ? 'Lot is already at or below target' : 'Apply to simulated lot only'}</button>
+        </div>
+      </div> : <div className="empty-action-state">No completed trip history matches this lot’s route and food group yet. Approve and simulate a route to collect an observation; the tool will only make a route-specific recommendation after a completed trip.</div>}
+      <p className="prototype-warning">Important: these route observations are generated by this demo’s simulated sensor stream, not actual shipment records. The pre-cooling action changes only the lot’s browser-side sample temperature. A real system would need calibrated device readings, validated commodity setpoints, and an authorized refrigeration controller before automatic equipment control.</p>
+    </section>
+    <section className="panel"><div className="panel-title-row"><div><div className="eyebrow">Learning log</div><h3>Route observations collected</h3></div><span className="small-muted">{learning.length} route / food-group models</span></div>
+      {learning.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>Route</th><th>Food group</th><th>Completed trips</th><th>Mean peak rise</th><th>Maximum rise</th><th>Latest lot</th></tr></thead><tbody>{learning.map((record) => <tr key={`${record.routeKey}-${record.foodGroup}`}><td>{record.routeName}</td><td>{FOOD_GROUP_LABELS[record.foodGroup]}</td><td>{record.sampleCount}</td><td>{record.averageTempRiseC.toFixed(1)}°C</td><td>{record.maxTempRiseC.toFixed(1)}°C</td><td>{record.lastBatchId}</td></tr>)}</tbody></table></div> : <p className="empty-action-state">No completed route observations have been collected in this browser session yet.</p>}
+    </section>
+  </div>;
+}
+
+export function SettingsPage({ batches, calibrations, onAddCalibration }: {
+  batches: Batch[];
+  calibrations: CalibrationCheck[];
+  onAddCalibration: (check: CalibrationCheck) => void;
+}) {
+  const [sensor, setSensor] = useState<CalibrationCheck['sensor']>('temperature');
+  const [lotId, setLotId] = useState(batches[0]?.id ?? '');
+  const [referenceValue, setReferenceValue] = useState('');
+  const [error, setError] = useState('');
+  const selected = batches.find((batch) => batch.id === lotId) ?? batches[0];
+  const sensorConfig: Record<CalibrationCheck['sensor'], { label: string; unit: string; limit: string; tolerance: number; value: (batch: Batch) => number }> = {
+    temperature: { label: 'Temperature', unit: '°C', limit: 'Food-specific range on each lot', tolerance: 0.5, value: (batch: Batch) => batch.tempC },
+    humidity: { label: 'Humidity', unit: '% RH', limit: '85–95% demo guide only', tolerance: 5, value: (batch: Batch) => batch.humidity },
+    ethylene: { label: 'Ethylene', unit: 'ppm', limit: 'DSL penalty >0.5 ppm · alert >1.2 ppm', tolerance: 0.1, value: (batch: Batch) => batch.ethylenePpm },
+  } as const;
+  const latestChecks = new Map<CalibrationCheck['sensor'], CalibrationCheck>();
+  for (const check of calibrations) if (!latestChecks.has(check.sensor)) latestChecks.set(check.sensor, check);
+  const temperatureErrors = batches.filter((batch) => batch.tempC < batch.safeRange.minC || batch.tempC > batch.safeRange.maxC).length;
+  const humidityErrors = batches.filter((batch) => batch.humidity < 85 || batch.humidity > 95).length;
+  const ethyleneAlerts = batches.filter((batch) => batch.ethylenePpm > 1.2).length;
+  const gpsErrors = batches.filter((batch) => !Number.isFinite(batch.lat) || !Number.isFinite(batch.lng) || Math.abs(batch.lat) > 90 || Math.abs(batch.lng) > 180).length;
+
+  const recordCalibration = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const reference = Number(referenceValue);
+    if (!selected || !Number.isFinite(reference)) {
+      setError('Select a lot and enter a valid reference reading.');
+      return;
+    }
+    const observedValue = sensorConfig[sensor].value(selected);
+    onAddCalibration({
+      sensor,
+      lotId: selected.id,
+      referenceValue: reference,
+      observedValue,
+      error: observedValue - reference,
+      checkedAt: new Date().toISOString(),
+    });
+    setReferenceValue('');
+    setError('');
+  };
+  const statusLabel = (check: CalibrationCheck | undefined, tolerance: number) => !check
+    ? 'No reference check recorded'
+    : Math.abs(check.error) <= tolerance ? 'Within demo tolerance on last check' : 'Difference detected · inspect';
+
+  return <div className="page-stack">
+    <SectionHeading eyebrow="Device & signal health · local demo" title="Sensor settings & calibration" detail="Review signal coverage, limits, and operator-entered reference checks. The current feeds are simulated; verified sensor accuracy cannot be calculated without physical devices and independent ground truth." />
+    <section className="panel"><div className="panel-title-row"><div><div className="eyebrow">Signal diagnostics</div><h3>Current status across {batches.length} lots</h3></div><span className="source-status reference">No physical sensors connected</span></div>
+      <div className="sensor-health-grid">{[
+        { key: 'temperature' as const, name: 'Temperature', source: 'Simulated cold-chain stream', unit: '°C', errors: temperatureErrors, tolerance: sensorConfig.temperature.tolerance, limit: 'Per-lot food profile' },
+        { key: 'humidity' as const, name: 'Humidity', source: 'Simulated cold-chain stream', unit: '% RH', errors: humidityErrors, tolerance: sensorConfig.humidity.tolerance, limit: '85–95% demo guide' },
+        { key: 'ethylene' as const, name: 'Ethylene', source: 'Simulated gas stream', unit: 'ppm', errors: ethyleneAlerts, tolerance: sensorConfig.ethylene.tolerance, limit: 'Alert >1.2 ppm' },
+        { key: 'gps' as const, name: 'GPS position', source: 'Simulated coordinates', unit: 'lat/lon', errors: gpsErrors, tolerance: 0, limit: 'Latitude ±90° · longitude ±180°' },
+        { key: 'weather' as const, name: 'Outdoor weather', source: 'Open-Meteo · external context', unit: '', errors: 0, tolerance: 0, limit: 'Fetched on Route map; not cargo telemetry' },
+      ].map((item) => {
+        const calibrationSensor = item.key === 'temperature' || item.key === 'humidity' || item.key === 'ethylene' ? item.key : undefined;
+        const lastCheck = calibrationSensor ? latestChecks.get(calibrationSensor) : undefined;
+        const sensorChecks = calibrationSensor ? calibrations.filter((check) => check.sensor === calibrationSensor) : [];
+        return <article key={item.key} className="sensor-health-card"><div><strong>{item.name}</strong><span className="source-status reference">{item.source}</span></div><p>{item.limit}</p><div className="sensor-health-facts"><span>Detected issues<strong>{item.errors} lots</strong></span><span>Reference checks<strong>{sensorChecks.length}</strong></span></div><small>{!calibrationSensor ? 'Accuracy not measured · no independent reference available.' : lastCheck ? statusLabel(lastCheck, sensorConfig[calibrationSensor].tolerance) : 'Accuracy not measured · awaiting external reference readings.'}</small>{lastCheck && calibrationSensor && <small>Last reference difference: {lastCheck.error > 0 ? '+' : ''}{lastCheck.error.toFixed(2)} {sensorConfig[calibrationSensor].unit} · {new Date(lastCheck.checkedAt).toLocaleString()}</small>}</article>;
+      })}</div>
+      <p className="prototype-warning">Issue counts are computed from current demo values against the displayed demo rules. “Verified accuracy: Not measured” is intentional: simulated readings have no independent physical reference, so reporting a sensor accuracy percentage would be misleading.</p>
+    </section>
+    <section className="panel"><div className="eyebrow">Manual reference check</div><h3>Compare one displayed value with a trusted reference</h3><p className="reference-note">Enter a reading from a calibrated external instrument. This stores the difference as a local note; it does not adjust the simulation or calibrate connected hardware.</p>
+      <form className="calibration-form" onSubmit={recordCalibration}>
+        <label>Sensor<select value={sensor} onChange={(event) => setSensor(event.target.value as CalibrationCheck['sensor'])}>{Object.entries(sensorConfig).map(([key, config]) => <option key={key} value={key}>{config.label}</option>)}</select></label>
+        <label>Lot<select value={selected?.id ?? ''} onChange={(event) => setLotId(event.target.value)}>{batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.id} · {batch.productName}</option>)}</select></label>
+        <label>External reference reading ({sensorConfig[sensor].unit})<input required type="number" step="any" value={referenceValue} onChange={(event) => setReferenceValue(event.target.value)} /></label>
+        {selected && <div className="calibration-current">Dashboard reading: <strong>{sensorConfig[sensor].value(selected).toFixed(2)} {sensorConfig[sensor].unit}</strong> · safety reference: {sensorConfig[sensor].limit}</div>}
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <button className="apply-route-button" type="submit">Record reference check</button>
+      </form>
+    </section>
+    <section className="panel"><div className="panel-title-row"><div><div className="eyebrow">Reference checks</div><h3>Recent calibration notes</h3></div><span className="small-muted">{calibrations.length} recorded</span></div>
+      {calibrations.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>Sensor</th><th>Lot</th><th>Dashboard reading</th><th>Reference</th><th>Difference</th><th>Checked</th></tr></thead><tbody>{calibrations.slice(0, 20).map((check, index) => <tr key={`${check.lotId}-${check.sensor}-${check.checkedAt}-${index}`}><td>{sensorConfig[check.sensor].label}</td><td>{check.lotId}</td><td>{check.observedValue.toFixed(2)}</td><td>{check.referenceValue.toFixed(2)}</td><td>{check.error > 0 ? '+' : ''}{check.error.toFixed(2)} {sensorConfig[check.sensor].unit}</td><td>{new Date(check.checkedAt).toLocaleString()}</td></tr>)}</tbody></table></div> : <p className="empty-action-state">No reference checks recorded yet.</p>}
+    </section>
   </div>;
 }

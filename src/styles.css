@@ -798,3 +798,35 @@ select { min-width: 125px; padding: 9px 28px 9px 10px; border: 1px solid rgba(25
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+.prediction-panel { display: grid; gap: 20px; }
+.prediction-selector { display: flex; align-items: end; gap: 20px; flex-wrap: wrap; }
+.prediction-selector label, .calibration-form label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.prediction-selector input, .calibration-form input, .calibration-form select { min-width: 220px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-raised); color: var(--text); }
+.prediction-selected { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+.prediction-selected strong { color: var(--text-primary); font-size: 14px; }
+.prediction-result { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(240px, .7fr); gap: 18px; }
+.prediction-evidence, .pre-cool-recommendation, .sensor-health-card { padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-raised); }
+.prediction-evidence h3, .pre-cool-recommendation strong { display: block; margin: 8px 0; }
+.prediction-evidence p, .prediction-evidence small, .pre-cool-recommendation small, .sensor-health-card p, .sensor-health-card small { color: var(--muted); line-height: 1.55; }
+.prediction-caution { margin-top: 14px; padding: 9px 11px; border-left: 2px solid #d68b2c; background: var(--panel); font-size: 12px; }
+.pre-cool-recommendation { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
+.pre-cool-recommendation strong { color: var(--green); font-size: 32px; }
+.apply-route-button { border: 0; border-radius: 8px; padding: 10px 14px; background: var(--green); color: #062a24; font-weight: 700; cursor: pointer; }
+.apply-route-button:disabled { cursor: default; opacity: .65; }
+.prototype-warning, .reference-note { margin: 0; padding: 12px 14px; border-left: 3px solid #d68b2c; border-radius: 4px; background: var(--panel-raised); color: var(--muted); font-size: 12px; line-height: 1.6; }
+.sensor-health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 18px 0; }
+.sensor-health-card { display: grid; gap: 12px; align-content: start; }
+.sensor-health-card > div:first-child { display: grid; gap: 8px; }
+.sensor-health-card > div:first-child strong { font-size: 15px; }
+.sensor-health-facts { display: flex; justify-content: space-between; gap: 8px; }
+.sensor-health-facts span { display: grid; gap: 4px; color: var(--muted); font-size: 11px; }
+.sensor-health-facts strong { color: var(--text); font-size: 13px; }
+.calibration-form { display: flex; align-items: end; gap: 14px; flex-wrap: wrap; margin-top: 18px; }
+.calibration-current { color: var(--muted); font-size: 12px; }
+.calibration-current strong { color: var(--text); }
+.form-error { color: #ef7878; font-size: 12px; }
+@media (max-width: 700px) {
+  .prediction-result { grid-template-columns: 1fr; }
+  .prediction-selector, .calibration-form { align-items: stretch; flex-direction: column; }
+  .prediction-selector input, .calibration-form input, .calibration-form select { width: 100%; min-width: 0; }
+}

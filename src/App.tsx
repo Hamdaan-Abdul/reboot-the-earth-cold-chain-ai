@@ -6,12 +6,15 @@ import {
   triggerEthyleneSpike,
   triggerRefrigerationFailure,
   triggerTrafficDelay,
+  learnRouteTemperature,
+  updateBatchCore,
+  type RouteLearningRecord,
 } from './engine';
 import { PRODUCTS } from './engine/products';
-import type { AuditEvent, Batch, Product } from './types';
+import type { AuditEvent, Batch, CalibrationCheck, Product } from './types';
 import { BatchDetailDrawer } from './components/Shared';
 import { QRScanner } from './components/QRScanner';
-import { ActivityPage, IntakePage, OverviewPage, MapPage, InspectorPage, NotificationsPage, PipelinePage, SimulatorPage, ReferencePage } from './pages/Pages';
+import { ActivityPage, IntakePage, OverviewPage, MapPage, InspectorPage, NotificationsPage, PipelinePage, SimulatorPage, ReferencePage, PredictionsPage, SettingsPage } from './pages/Pages';
 
 const navigation = [
   { id: 'overview', label: 'Home', icon: '⌂' },
@@ -26,6 +29,8 @@ const moreNavigation = [
   { id: 'activity', label: 'Recent activity', icon: '◷' },
   { id: 'simulator', label: 'Anomaly lab', icon: '⚡' },
   { id: 'reference', label: 'Reference', icon: '≡' },
+  { id: 'predictions', label: 'Predictions', icon: '↗' },
+  { id: 'settings', label: 'Sensor settings', icon: '⚙' },
 ] as const;
 
 type PageId = (typeof navigation)[number]['id'] | (typeof moreNavigation)[number]['id'];
@@ -81,15 +86,15 @@ function isStoredBatch(value: unknown): value is Batch {
     && Array.isArray(batch.eventLog);
 }
 
-function loadAppState(): { batches: Batch[]; events: AuditEvent[]; products: Record<string, Product>; warning: string; lastUpdated: Date } {
+function loadAppState(): { batches: Batch[]; events: AuditEvent[]; products: Record<string, Product>; learning: RouteLearningRecord[]; calibrations: CalibrationCheck[]; warning: string; lastUpdated: Date } {
   const seeded = makeInitialBatches();
   const now = new Date();
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (!stored) return { batches: seeded, events: initialAudit(seeded), products: PRODUCTS, warning: '', lastUpdated: now };
+    if (!stored) return { batches: seeded, events: initialAudit(seeded), products: PRODUCTS, learning: [], calibrations: [], warning: '', lastUpdated: now };
     const parsed: unknown = JSON.parse(stored);
-    if (!parsed || typeof parsed !== 'object') return { batches: seeded, events: initialAudit(seeded), products: PRODUCTS, warning: 'Saved local data was invalid; starting with sample lots.', lastUpdated: now };
-    const state = parsed as { schemaVersion?: unknown; batches?: unknown; manualLots?: unknown; events?: unknown; products?: unknown; savedAt?: unknown };
+    if (!parsed || typeof parsed !== 'object') return { batches: seeded, events: initialAudit(seeded), products: PRODUCTS, learning: [], calibrations: [], warning: 'Saved local data was invalid; starting with sample lots.', lastUpdated: now };
+    const state = parsed as { schemaVersion?: unknown; batches?: unknown; manualLots?: unknown; events?: unknown; products?: unknown; learning?: unknown; calibrations?: unknown; savedAt?: unknown };
     const storedProducts = Array.isArray(state.products) ? state.products.filter(isStoredProduct) : [];
     const products = Object.fromEntries([...Object.values(PRODUCTS), ...storedProducts].map((product) => [product.key, product]));
     const upgradeBatch = (batch: Batch): Batch => {
@@ -105,7 +110,7 @@ function loadAppState(): { batches: Batch[]; events: AuditEvent[]; products: Rec
         priceBasePerKg: profile?.priceBasePerKg ?? batch.priceBasePerKg ?? 1,
       };
     };
-    const savedBatches = state.schemaVersion === 3 && Array.isArray(state.batches) && state.batches.length > 0 && state.batches.every(isStoredBatch)
+    const savedBatches = state.schemaVersion === 4 && Array.isArray(state.batches) && state.batches.length > 0 && state.batches.every(isStoredBatch)
       ? state.batches.map(upgradeBatch)
       : undefined;
     const legacyManualLots = Array.isArray(state.manualLots)
@@ -119,7 +124,27 @@ function loadAppState(): { batches: Batch[]; events: AuditEvent[]; products: Rec
       ? state.events.filter((event): event is AuditEvent => Boolean(event && typeof event === 'object' && typeof (event as AuditEvent).id === 'string' && typeof (event as AuditEvent).message === 'string' && typeof (event as AuditEvent).at === 'string' && typeof (event as AuditEvent).batchId === 'string' && ['INFO', 'WARNING', 'SUCCESS', 'CRITICAL'].includes((event as AuditEvent).kind)))
       : [];
     const validBatches = savedBatches ?? [...preservedManualLots, ...seeded];
-    const migratedSampleData = !savedBatches && (state.schemaVersion === 1 || state.schemaVersion === 2);
+    const migratedSampleData = !savedBatches && (state.schemaVersion === 1 || state.schemaVersion === 2 || state.schemaVersion === 3);
+    const learning = Array.isArray(state.learning) ? state.learning.filter((record): record is RouteLearningRecord => Boolean(
+      record && typeof record === 'object'
+      && typeof (record as RouteLearningRecord).routeKey === 'string'
+      && typeof (record as RouteLearningRecord).routeName === 'string'
+      && ['FRUIT', 'VEGETABLE', 'MEAT', 'POULTRY', 'SEAFOOD', 'DAIRY', 'OTHER'].includes((record as RouteLearningRecord).foodGroup)
+      && Number.isInteger((record as RouteLearningRecord).sampleCount)
+      && (record as RouteLearningRecord).sampleCount > 0
+      && Number.isFinite((record as RouteLearningRecord).averageTempRiseC)
+      && Number.isFinite((record as RouteLearningRecord).maxTempRiseC),
+    )) : [];
+    const calibrations = Array.isArray(state.calibrations) ? state.calibrations.filter((check): check is CalibrationCheck => Boolean(
+      check && typeof check === 'object'
+      && ['temperature', 'humidity', 'ethylene'].includes((check as CalibrationCheck).sensor)
+      && typeof (check as CalibrationCheck).lotId === 'string'
+      && Number.isFinite((check as CalibrationCheck).referenceValue)
+      && Number.isFinite((check as CalibrationCheck).observedValue)
+      && Number.isFinite((check as CalibrationCheck).error)
+      && typeof (check as CalibrationCheck).checkedAt === 'string'
+      && Number.isFinite(Date.parse((check as CalibrationCheck).checkedAt)),
+    )) : [];
     const validEvents = savedBatches ? savedEvents : savedEvents.filter((event) => preservedManualLots.some((lot) => lot.id === event.batchId));
     const updatedEvents = initialAudit(validBatches);
     const validSavedAt = typeof state.savedAt === 'string' && Number.isFinite(Date.parse(state.savedAt)) ? new Date(state.savedAt) : now;
@@ -127,15 +152,17 @@ function loadAppState(): { batches: Batch[]; events: AuditEvent[]; products: Rec
       batches: validBatches,
       events: savedBatches && savedEvents.length ? savedEvents.slice(0, 40) : [...validEvents, ...updatedEvents].slice(0, 40),
       products,
+      learning,
+      calibrations,
       warning: migratedSampleData
-        ? 'Sample lots were refreshed to restore their starting condition; manually entered lots were kept.'
-        : state.schemaVersion === 3 && !savedBatches
+        ? 'Sample lots were refreshed to restore their starting condition; manually entered lots were kept. Prediction history and calibration notes were preserved.'
+        : state.schemaVersion === 4 && !savedBatches
           ? 'Saved lot data was invalid; starting with fresh sample lots.'
           : '',
       lastUpdated: savedBatches || legacyManualLots.length ? validSavedAt : now,
     };
   } catch {
-    return { batches: seeded, events: initialAudit(seeded), products: PRODUCTS, warning: 'Local storage is unavailable; changes will not persist after this session.', lastUpdated: now };
+    return { batches: seeded, events: initialAudit(seeded), products: PRODUCTS, learning: [], calibrations: [], warning: 'Local storage is unavailable; changes will not persist after this session.', lastUpdated: now };
   }
 }
 
@@ -146,6 +173,10 @@ export default function App() {
   const batchesRef = useRef(batches);
   const [events, setEvents] = useState<AuditEvent[]>(initialState.events);
   const [products, setProducts] = useState<Record<string, Product>>(initialState.products);
+  const [learning, setLearning] = useState<RouteLearningRecord[]>(initialState.learning);
+  const learningRef = useRef(learning);
+  const [calibrations, setCalibrations] = useState<CalibrationCheck[]>(initialState.calibrations);
+  const tripTrackers = useRef<Record<string, { routeKey: string; routeName: string; foodGroup: Batch['foodGroup']; startTempC: number; peakTempC: number }>>({});
   const [now, setNow] = useState(initialState.lastUpdated);
   const [selectedBatchId, setSelectedBatchId] = useState<string>();
   const [searchQuery, setSearchQuery] = useState('');
@@ -162,9 +193,56 @@ export default function App() {
     const at = new Date();
     setNow(at);
     const result = tickSimulation(batchesRef.current, at);
+    const trackers = { ...tripTrackers.current };
+    const completedTrips: Parameters<typeof learnRouteTemperature>[1][] = [];
+    for (const batch of result.batches) {
+      const previous = batchesRef.current.find((item) => item.id === batch.id);
+      if (!previous || !batch.flight) continue;
+      const routeKey = batch.flight.id;
+      if (batch.flightStatus === 'IN_TRANSIT') {
+        const tracker = trackers[batch.id] ?? {
+          routeKey,
+          routeName: `${batch.originCity} → ${batch.flight.destinationCity}`,
+          foodGroup: batch.foodGroup,
+          startTempC: previous.tempC,
+          peakTempC: previous.tempC,
+        };
+        trackers[batch.id] = { ...tracker, peakTempC: Math.max(tracker.peakTempC, batch.tempC) };
+      }
+      if (previous.flightStatus === 'IN_TRANSIT' && batch.flightStatus === 'ARRIVED') {
+        const tracker = trackers[batch.id];
+        if (tracker) {
+          completedTrips.push({
+            routeKey: tracker.routeKey,
+            routeName: tracker.routeName,
+            foodGroup: tracker.foodGroup,
+            temperatureRiseC: tracker.peakTempC - tracker.startTempC,
+            observedAt: at.toISOString(),
+            batchId: batch.id,
+          });
+          delete trackers[batch.id];
+        }
+      }
+    }
+    tripTrackers.current = trackers;
     batchesRef.current = result.batches;
     setBatches(result.batches);
     if (result.events.length) setEvents((previous) => [...result.events, ...previous].slice(0, 40));
+    if (completedTrips.length) {
+      const updatedLearning = completedTrips.reduce((records, observation) => learnRouteTemperature(records, observation), learningRef.current);
+      learningRef.current = updatedLearning;
+      setLearning(updatedLearning);
+      setEvents((previous) => [
+        ...completedTrips.map((trip) => ({
+          id: `${trip.batchId}-${at.getTime()}-route-learning`,
+          at: at.toLocaleTimeString(),
+          batchId: trip.batchId,
+          message: `Prediction recorded · simulated ${trip.routeName} route showed a ${trip.temperatureRiseC.toFixed(1)}°C peak temperature rise. Used as a future pre-cooling advisory only.`,
+          kind: 'INFO' as const,
+        })),
+        ...previous,
+      ].slice(0, 40));
+    }
   };
 
   useEffect(() => {
@@ -192,16 +270,18 @@ export default function App() {
   useEffect(() => {
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        schemaVersion: 3,
+        schemaVersion: 4,
         batches,
         events: events.slice(0, 40),
         products: Object.values(products).filter((product) => product.custom),
+        learning,
+        calibrations,
         savedAt: now.toISOString(),
       }));
     } catch {
       setStorageWarning('Could not save this session locally; new lots and activity will be lost after closing the browser.');
     }
-  }, [batches, events, now, products]);
+  }, [batches, events, now, products, learning, calibrations]);
 
   useEffect(() => {
     const interval = window.setInterval(advanceSimulation, 150000);
@@ -331,6 +411,42 @@ export default function App() {
     setEvents((current) => [referenceEvent, ...current].slice(0, 40));
   };
 
+  const applyPreCooling = (batchId: string, targetC: number, routeName: string) => {
+    const previous = batchesRef.current.find((batch) => batch.id === batchId);
+    if (!previous || targetC < previous.safeRange.minC || targetC > previous.safeRange.maxC) return;
+    const cooled = updateBatchCore({ ...previous, tempC: Math.min(previous.tempC, targetC) });
+    const next = batchesRef.current.map((batch) => batch.id === batchId ? {
+      ...cooled,
+      status: previous.status,
+      dispatchConfirmed: previous.dispatchConfirmed,
+      flightStatus: previous.flightStatus,
+    } : batch);
+    batchesRef.current = next;
+    setBatches(next);
+    setNow(new Date());
+    const event: AuditEvent = {
+      id: `${batchId}-${Date.now()}-precool`,
+      at: new Date().toLocaleTimeString(),
+      batchId,
+      message: `Simulated pre-cooling set ${batchId} to ${Math.min(previous.tempC, targetC).toFixed(1)}°C before ${routeName}, based on local route history. No physical refrigeration control was sent.`,
+      kind: 'INFO',
+    };
+    setEvents((current) => [event, ...current].slice(0, 40));
+  };
+
+  const addCalibration = (check: CalibrationCheck) => {
+    setCalibrations((previous) => [check, ...previous].slice(0, 30));
+    setNow(new Date());
+    const event: AuditEvent = {
+      id: `${check.lotId}-${Date.now()}-calibration`,
+      at: new Date().toLocaleTimeString(),
+      batchId: check.lotId,
+      message: `Calibration check recorded for ${check.sensor} · reference difference ${check.error > 0 ? '+' : ''}${check.error.toFixed(2)}. Recorded locally; this does not calibrate a physical device.`,
+      kind: Math.abs(check.error) > (check.sensor === 'temperature' ? 0.5 : check.sensor === 'humidity' ? 5 : 0.1) ? 'WARNING' : 'INFO',
+    };
+    setEvents((previous) => [event, ...previous].slice(0, 40));
+  };
+
   const selectBatch = (batchId: string) => setSelectedBatchId(batchId);
   const selectedBatch = batches.find((batch) => batch.id === selectedBatchId);
   const simulationStale = Date.now() - now.getTime() > 180000;
@@ -346,6 +462,8 @@ export default function App() {
       case 'activity': return <ActivityPage batches={batches} events={events} />;
       case 'simulator': return <SimulatorPage batches={batches} events={events} onAction={triggerAction} onSelectBatch={selectBatch} />;
       case 'reference': return <ReferencePage batches={batches} products={products} onAddProduct={addProduct} onSelectBatch={selectBatch} />;
+      case 'predictions': return <PredictionsPage batches={batches} learning={learning} onApplyPreCooling={applyPreCooling} />;
+      case 'settings': return <SettingsPage batches={batches} calibrations={calibrations} onAddCalibration={addCalibration} />;
     }
   };
 

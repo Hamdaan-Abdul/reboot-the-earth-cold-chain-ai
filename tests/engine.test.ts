@@ -15,12 +15,49 @@ import {
   triggerEthyleneSpike,
   triggerRefrigerationFailure,
   triggerTrafficDelay,
+  learnRouteTemperature,
+  recommendPreCoolingTarget,
 } from '../src/engine';
 import { sampleSensors } from '../src/sensors';
 import { DESTINATIONS, FLIGHTS, PRODUCTS } from '../src/engine/products';
 import type { Batch } from '../src/types';
 
 describe('cold-chain engine calculations', () => {
+  it('learns route-specific temperature rises and clamps pre-cooling to the food profile', () => {
+    const routeObservation = {
+      routeKey: 'flight-doha-paris',
+      routeName: 'Doha → Paris',
+      foodGroup: 'FRUIT' as const,
+      temperatureRiseC: 3,
+      observedAt: '2025-01-01T00:00:00.000Z',
+      batchId: 'lot-1',
+    };
+    const first = learnRouteTemperature([], routeObservation);
+    const learned = learnRouteTemperature(first, { ...routeObservation, temperatureRiseC: 5, batchId: 'lot-2' });
+    expect(learned).toHaveLength(1);
+    expect(learned[0].sampleCount).toBe(2);
+    expect(learned[0].averageTempRiseC).toBe(4);
+    expect(learned[0].maxTempRiseC).toBe(5);
+    expect(learned[0].lastBatchId).toBe('lot-2');
+    expect(recommendPreCoolingTarget({ minC: 2, maxC: 8 }, 7, learned[0])).toBe(4);
+    expect(recommendPreCoolingTarget({ minC: 6, maxC: 8 }, 7, learned[0])).toBe(6);
+  });
+
+  it('keeps route learning separate for each food group and ignores invalid observations', () => {
+    const observation = {
+      routeKey: 'flight-doha-paris',
+      routeName: 'Doha → Paris',
+      foodGroup: 'FRUIT' as const,
+      temperatureRiseC: 2,
+      observedAt: '2025-01-01T00:00:00.000Z',
+      batchId: 'fruit-lot',
+    };
+    const fruitRecords = learnRouteTemperature([], observation);
+    const distinctRecords = learnRouteTemperature(fruitRecords, { ...observation, foodGroup: 'SEAFOOD', batchId: 'seafood-lot' });
+    expect(distinctRecords).toHaveLength(2);
+    expect(learnRouteTemperature(distinctRecords, { ...observation, temperatureRiseC: Number.NaN })).toBe(distinctRecords);
+  });
+
   it('applies the stated thermal and climacteric ethylene penalties only when eligible', () => {
     const base = { baselineDays: 20, tempC: 16, optimalMaxTempC: 14, ethylenePpm: 0.8, climacteric: true };
     expect(computeDSL(base)).toBeCloseTo(20 * (1 - (2 * 0.12 + 0.8 * 0.25)));

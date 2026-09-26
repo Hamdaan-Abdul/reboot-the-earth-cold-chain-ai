@@ -2,6 +2,14 @@
 
 A frontend-only international cold-chain decision prototype built for CMUQ Qatar. Simulated sensor and flight streams feed a pure TypeScript shelf-life and route-economics engine; route recommendations follow freshness (raw can travel farther, edible stays regional, near-expiry stays local, and expired lots follow safe recovery tiers). Operators can approve recommendations for simulation only; no real shipment or partner action is triggered.
 
+## Public access
+
+- **Live judge demo:** [Project Light 19](https://hamdaan-abdul.github.io/reboot-the-earth-cold-chain-ai/)
+- **Open-source repository:** [Hamdaan-Abdul/reboot-the-earth-cold-chain-ai](https://github.com/Hamdaan-Abdul/reboot-the-earth-cold-chain-ai)
+- **License:** [MIT](LICENSE)
+
+Anyone can open the demo without an account. Every visitor gets the same seeded example experience, but actions, added lots, calibration notes, and route-learning history are saved only in that visitor's browser; they are not shared across people or devices. All generated lots and sensor streams are illustrative rather than real measurements.
+
 ## Run locally
 
 ```bash

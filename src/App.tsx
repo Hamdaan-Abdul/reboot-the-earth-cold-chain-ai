@@ -3,6 +3,7 @@ import {
   makeInitialBatches,
   createDemoArrival,
   recordOperatorDecision,
+  resetOperatorDecision,
   tickSimulation,
   triggerEthyleneSpike,
   triggerRefrigerationFailure,
@@ -381,6 +382,24 @@ export default function App() {
     setEvents((current) => [decisionEvent, ...current].slice(0, 40));
   };
 
+  const resetDecisions = () => {
+    const decisions = batchesRef.current.filter((batch) => batch.operatorDecision);
+    if (!decisions.length) return;
+    const next = batchesRef.current.map(resetOperatorDecision);
+    batchesRef.current = next;
+    setBatches(next);
+    const at = new Date();
+    setNow(at);
+    const resetEvent: AuditEvent = {
+      id: `SYSTEM-${at.getTime()}-decisions-reset`,
+      at: at.toLocaleTimeString(),
+      batchId: 'SYSTEM',
+      message: `Operator reset · cleared saved decisions and notes for ${decisions.length} lot${decisions.length === 1 ? '' : 's'} and returned routes to current recommendations. Lots, sensor data, and active safety alerts were preserved.`,
+      kind: 'INFO',
+    };
+    setEvents((current) => [resetEvent, ...current].slice(0, 40));
+  };
+
   const findBatch = (query: string) => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return undefined;
@@ -484,7 +503,7 @@ export default function App() {
       case 'overview': return <OverviewPage batches={batches} events={events} onSelectBatch={selectBatch} onOpenNotifications={() => setPage('notifications')} onOpenLots={() => setPage('inspector')} onOpenActivity={() => setPage('activity')} />;
       case 'map': return <MapPage batches={batches} onSelectBatch={selectBatch} />;
       case 'inspector': return <InspectorPage batches={batches} onSelectBatch={selectBatch} />;
-      case 'notifications': return <NotificationsPage batches={batches} events={events} onSelectBatch={selectBatch} onRecordDecision={recordDecision} />;
+      case 'notifications': return <NotificationsPage batches={batches} events={events} onSelectBatch={selectBatch} onRecordDecision={recordDecision} onResetDecisions={resetDecisions} />;
       case 'intake': return <IntakePage batches={batches} products={products} onAddBatch={addBatch} onAddDemoBatch={addDemoArrival} />;
       case 'pipeline': return <PipelinePage batches={batches} onSelectBatch={selectBatch} />;
       case 'activity': return <ActivityPage batches={batches} events={events} />;

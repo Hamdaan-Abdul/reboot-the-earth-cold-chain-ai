@@ -825,8 +825,11 @@ select { min-width: 125px; padding: 9px 28px 9px 10px; border: 1px solid rgba(25
 .calibration-current { color: var(--muted); font-size: 12px; }
 .calibration-current strong { color: var(--text); }
 .form-error { color: #ef7878; font-size: 12px; }
+.reset-decisions-button { align-self: center; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-raised); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+.reset-decisions-button:disabled { opacity: .5; cursor: default; }
 @media (max-width: 700px) {
   .prediction-result { grid-template-columns: 1fr; }
   .prediction-selector, .calibration-form { align-items: stretch; flex-direction: column; }
   .prediction-selector input, .calibration-form input, .calibration-form select { width: 100%; min-width: 0; }
+  .reset-decisions-button { align-self: flex-start; }
 }

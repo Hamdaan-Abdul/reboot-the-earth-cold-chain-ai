@@ -172,4 +172,20 @@ export function recordOperatorDecision(
     : `Suggested route approved by ${trimmedName}${note.trim() ? ` · ${note.trim()}` : ''}`);
 }
 
+export function resetOperatorDecision(batch: Batch): Batch {
+  if (!batch.operatorDecision) return batch;
+  const reset = updateBatchCore({
+    ...batch,
+    dispatchConfirmed: false,
+    status: batch.contaminated || batch.anomalyReason ? 'ANOMALY_DETECTED' : 'STATUS_NORMAL',
+    operatorDecision: undefined,
+    operatorNote: undefined,
+    flight: undefined,
+    flightStatus: undefined,
+    flightHoursUntilDeparture: undefined,
+    flightHoursRemaining: undefined,
+  }, 'long-range');
+  return appendLog(reset, 'Operator decision and note cleared; route recalculated for review.');
+}
+
 export { DESTINATIONS };

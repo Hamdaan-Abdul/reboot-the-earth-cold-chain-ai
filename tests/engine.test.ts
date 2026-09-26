@@ -10,6 +10,7 @@ import {
   makeInitialBatches,
   operatorRouteOptions,
   recordOperatorDecision,
+  resetOperatorDecision,
   routeDistanceKm,
   selectDestination,
   tickSimulation,
@@ -225,6 +226,27 @@ describe('cold-chain engine calculations', () => {
     const unsafe = makeInitialBatches().find((item) => item.contaminated)!;
     expect(() => recordOperatorDecision(unsafe, 'Ari', 'APPROVED_SUGGESTION')).toThrow('must be checked');
     expect(recordOperatorDecision(unsafe, 'Ari', 'HOLD_FOR_INSPECTION', 'Quarantine it').dispatchConfirmed).toBe(false);
+  });
+
+  it('resets a saved operator decision and recalculates the route without clearing safety alerts', () => {
+    const batch = makeInitialBatches().find((item) => item.originAirportCode === 'UIO' && item.category === 'RAW')!;
+    const alternate = operatorRouteOptions(batch).find((option) => option.id !== batch.assignedDestination.id)!;
+    const chosen = recordOperatorDecision(batch, 'Ari', 'ALTERNATE_ROUTE', 'Use the nearer hub', alternate.id);
+    const reset = resetOperatorDecision(chosen);
+    expect(reset.operatorDecision).toBeUndefined();
+    expect(reset.operatorNote).toBeUndefined();
+    expect(reset.dispatchConfirmed).toBe(false);
+    expect(reset.status).not.toBe('DISPATCH_CONFIRMED');
+    expect(reset.assignedDestination.id).toBe(batch.assignedDestination.id);
+    expect(reset.eventLog[0]).toContain('decision and note cleared');
+    expect(resetOperatorDecision(batch)).toBe(batch);
+
+    const unsafe = makeInitialBatches().find((item) => item.contaminated)!;
+    const held = recordOperatorDecision(unsafe, 'Ari', 'HOLD_FOR_INSPECTION', 'Quarantine it');
+    const resetHold = resetOperatorDecision(held);
+    expect(resetHold.operatorDecision).toBeUndefined();
+    expect(resetHold.contaminated).toBe(true);
+    expect(resetHold.status).toBe('ANOMALY_DETECTED');
   });
 
   it('moves produce from edible to almost-bad as freshness ages and records the stage transition', () => {

@@ -55,15 +55,18 @@ export function ActivityPage({ batches, events }: { batches: Batch[]; events: Au
   </div>;
 }
 
-export function NotificationsPage({ batches, events, onSelectBatch, onRecordDecision }: { batches: Batch[]; events: AuditEvent[]; onSelectBatch: (id: string) => void; onRecordDecision: (id: string, operatorName: string, decision: 'APPROVED_SUGGESTION', note: string) => void }) {
+export function NotificationsPage({ batches, events, onSelectBatch, onRecordDecision, onResetDecisions }: { batches: Batch[]; events: AuditEvent[]; onSelectBatch: (id: string) => void; onRecordDecision: (id: string, operatorName: string, decision: 'APPROVED_SUGGESTION', note: string) => void; onResetDecisions: () => void }) {
   const [query, setQuery] = useState('');
   const [operatorName, setOperatorName] = useState('');
   const [approvalError, setApprovalError] = useState('');
   const actionBatches = batches.filter(needsOperatorReview)
     .filter((batch) => `${batch.id} ${batch.productName} ${batch.supplierLotCode} ${batch.foodGroup} ${FOOD_GROUP_LABELS[batch.foodGroup]}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => Number(b.contaminated) - Number(a.contaminated) || a.dslDays - b.dslDays);
+  const decisionCount = batches.filter((batch) => Boolean(batch.operatorDecision)).length;
   return <div className="page-stack">
-    <SectionHeading eyebrow="Operator queue" title="Needs your review" detail="Check the alert, evidence, and suggested next step. This demo will not dispatch a shipment." />
+    <SectionHeading eyebrow="Operator queue" title="Needs your review" detail="Check the alert, evidence, and suggested next step. This demo will not dispatch a shipment." action={<button className="reset-decisions-button" disabled={!decisionCount} onClick={() => {
+      if (window.confirm(`Reset saved decisions and notes for ${decisionCount} lots? This preserves lots, sensor readings, and active safety alerts.`)) onResetDecisions();
+    }}>Reset my decisions{decisionCount ? ` · ${decisionCount}` : ''}</button>} />
     <label className="inventory-filter">Search actions<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Food, lot code, or food group" /></label>
     {actionBatches.length ? <section className="panel"><div className="quick-approval-bar"><label>Name for approval log<input value={operatorName} onChange={(event) => { setOperatorName(event.target.value); setApprovalError(''); }} placeholder="Your name" /></label><small>Approval is recorded locally for the selected suggested route. It does not dispatch a real shipment.</small></div>{approvalError && <p className="form-error" role="alert">{approvalError}</p>}<div className="simple-notification-list">{actionBatches.map((batch) => <article key={batch.id} className="simple-notification">
       <span className={`notification-mark ${batch.contaminated ? 'danger' : ''}`}>{batch.contaminated ? '!' : '↗'}</span>

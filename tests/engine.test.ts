@@ -4,6 +4,7 @@ import {
   computeProbabilitySafeArrival,
   createManualBatch,
   createProductProfile,
+  createDemoArrival,
   confirmDispatch,
   financialCheck,
   makeInitialBatches,
@@ -104,6 +105,21 @@ describe('cold-chain engine calculations', () => {
     })[batch.category])).toBe(true);
     expect(batches.filter((batch) => batch.status === 'PENDING_APPROVAL')).toHaveLength(0);
     expect(batches.filter((batch) => batch.contaminated).every((batch) => batch.status === 'ANOMALY_DETECTED')).toBe(true);
+  });
+
+  it('creates clearly marked sample arrivals using known demo product profiles', () => {
+    const existing = makeInitialBatches();
+    const at = new Date('2026-09-26T08:00:00.000Z');
+    const first = createDemoArrival(existing, PRODUCTS, at, 1);
+    const second = createDemoArrival(existing, PRODUCTS, at, 2);
+    expect(first.id).not.toBe(second.id);
+    expect(first.isAutoDemo).toBe(true);
+    expect(first.isManual).toBeUndefined();
+    expect(first.supplierName).toContain('generated sample');
+    expect(first.eventLog[0]).toContain('not a real shipment');
+    expect(PRODUCTS[first.productKey]).toBeDefined();
+    expect(first.dslDays).toBeGreaterThan(0);
+    expect(first.history).toHaveLength(1);
   });
 
   it('assesses manually entered lots using live engine routing and freshness logic', () => {

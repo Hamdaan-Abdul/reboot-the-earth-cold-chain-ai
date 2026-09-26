@@ -34,7 +34,7 @@ export function OverviewPage({ batches, events, onSelectBatch, onOpenNotificatio
         <div className="panel-title-row"><div><div className="eyebrow">Inventory</div><h3>Recent lots</h3></div><span className="small-muted">{batches.length} in view</span></div>
         {batches.slice(0, 5).map((batch) => <button className="batch-health-row selectable-row" key={batch.id} onClick={() => onSelectBatch(batch.id)} aria-label={`Open details for ${batch.id}`}>
           <span className="health-product-icon" style={{ color: CATEGORY_COLORS[batch.category] }}>{batch.productName.slice(0, 1)}</span>
-          <div className="health-meta"><strong>{batch.productName}</strong><small>{batch.id} · {batch.weightKg} kg</small></div>
+          <div className="health-meta"><strong>{batch.productName}</strong><small>{batch.id} · {batch.weightKg} kg{batch.isAutoDemo ? ' · generated demo sample' : ''}</small></div>
           <div className="health-days"><strong>{batch.dslDays.toFixed(1)} d</strong><small>freshness</small></div>
           <div className="home-row-tags"><FoodGroupBadge foodGroup={batch.foodGroup} /><CategoryBadge category={batch.category} /></div>
         </button>)}
@@ -81,7 +81,7 @@ export function NotificationsPage({ batches, events, onSelectBatch, onRecordDeci
   </div>;
 }
 
-export function IntakePage({ batches, products, onAddBatch }: { batches: Batch[]; products: Record<string, Product>; onAddBatch: (batch: Batch) => void }) {
+export function IntakePage({ batches, products, onAddBatch, onAddDemoBatch }: { batches: Batch[]; products: Record<string, Product>; onAddBatch: (batch: Batch) => void; onAddDemoBatch: () => void }) {
   const origins = Array.from(new Map(batches.map((batch) => [batch.originCountry, batch])).values());
   const [id, setId] = useState(() => `LOT-MANUAL-${String(batches.length + 1).padStart(3, '0')}`);
   const [foodGroup, setFoodGroup] = useState<FoodGroup>('FRUIT');
@@ -119,7 +119,8 @@ export function IntakePage({ batches, products, onAddBatch }: { batches: Batch[]
   };
 
   return <div className="page-stack">
-    <SectionHeading eyebrow="Manual intake" title="Check a new lot" detail="Enter a few known details. The engine will estimate freshness, safety, and a recommended next step." />
+    <SectionHeading eyebrow="Manual intake" title="Check a new lot" detail="Enter a few known details. The engine will estimate freshness, safety, and a recommended next step." action={<button className="apply-route-button" onClick={onAddDemoBatch}>Simulate demo arrival</button>} />
+    <p className="prototype-warning">Auto-generated arrivals use illustrative profiles and simulated measurements only. They keep the dashboard populated for a demo; they do not add real shipment data or improve sensor calibration.</p>
     <div className="intake-layout"><form className="panel intake-form" onSubmit={submit}>
       <label>What type of food?<select value={foodGroup} onChange={(event) => { const nextGroup = event.target.value as FoodGroup; const nextProduct = Object.values(products).find((product) => product.foodGroup === nextGroup); setFoodGroup(nextGroup); if (nextProduct) { setProductKey(nextProduct.key); setTempC(String(nextProduct.optimalMaxTempC)); } setPreview(undefined); }}>{Object.entries(FOOD_GROUP_LABELS).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></label>
       <label>Food type<select value={productKey} onChange={(event) => { setProductKey(event.target.value); setTempC(String(products[event.target.value].optimalMaxTempC)); setPreview(undefined); }}>{groupProducts.map((product) => <option value={product.key} key={product.key}>{product.name}{product.custom ? ' · custom reference' : ''}</option>)}</select></label>
@@ -266,7 +267,7 @@ export function InspectorPage({ batches, onSelectBatch }: { batches: Batch[]; on
     <label className="inventory-filter">Filter lots<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, lot code, or supplier lot" /></label>
     <section className="panel inventory-list" aria-label="Produce lots">
       {filtered.map((batch) => <button key={batch.id} className="inventory-row selectable-row" onClick={() => onSelectBatch(batch.id)}>
-        <span className="inventory-title"><strong>{batch.productName}</strong><small>{batch.id} · {batch.originCity}, {batch.originCountry}</small><FoodGroupBadge foodGroup={batch.foodGroup} /></span>
+        <span className="inventory-title"><strong>{batch.productName}</strong><small>{batch.id} · {batch.originCity}, {batch.originCountry}{batch.isAutoDemo ? ' · generated demo sample' : ''}</small><FoodGroupBadge foodGroup={batch.foodGroup} /></span>
         <span className="inventory-cell"><small>Condition</small><CategoryBadge category={batch.category} /></span>
         <span className="inventory-cell"><small>Est. freshness</small><strong>{batch.dslDays.toFixed(1)} days</strong></span>
         <span className="inventory-cell"><small>Temperature</small><strong>{batch.tempC.toFixed(1)}°C <span className={batch.tempC > batch.safeRange.maxC || batch.tempC < batch.safeRange.minC ? 'text-warning' : 'text-good'}>{batch.tempC > batch.safeRange.maxC || batch.tempC < batch.safeRange.minC ? '· Above safe range' : '· In safe range'}</span></strong></span>
@@ -463,6 +464,13 @@ export function SettingsPage({ batches, calibrations, onAddCalibration }: {
   } as const;
   const latestChecks = new Map<CalibrationCheck['sensor'], CalibrationCheck>();
   for (const check of calibrations) if (!latestChecks.has(check.sensor)) latestChecks.set(check.sensor, check);
+  const calibrationSummary = (key: CalibrationCheck['sensor']) => {
+    const checks = calibrations.filter((check) => check.sensor === key);
+    if (!checks.length) return 'No independent reference checks recorded.';
+    const meanBias = checks.reduce((total, check) => total + check.error, 0) / checks.length;
+    const meanAbsoluteError = checks.reduce((total, check) => total + Math.abs(check.error), 0) / checks.length;
+    return `${checks.length} checks · mean signed difference ${meanBias > 0 ? '+' : ''}${meanBias.toFixed(2)} · mean absolute difference ${meanAbsoluteError.toFixed(2)} ${sensorConfig[key].unit}. Not a validated accuracy score.`;
+  };
   const temperatureErrors = batches.filter((batch) => batch.tempC < batch.safeRange.minC || batch.tempC > batch.safeRange.maxC).length;
   const humidityErrors = batches.filter((batch) => batch.humidity < 85 || batch.humidity > 95).length;
   const ethyleneAlerts = batches.filter((batch) => batch.ethylenePpm > 1.2).length;
@@ -504,7 +512,7 @@ export function SettingsPage({ batches, calibrations, onAddCalibration }: {
         const calibrationSensor = item.key === 'temperature' || item.key === 'humidity' || item.key === 'ethylene' ? item.key : undefined;
         const lastCheck = calibrationSensor ? latestChecks.get(calibrationSensor) : undefined;
         const sensorChecks = calibrationSensor ? calibrations.filter((check) => check.sensor === calibrationSensor) : [];
-        return <article key={item.key} className="sensor-health-card"><div><strong>{item.name}</strong><span className="source-status reference">{item.source}</span></div><p>{item.limit}</p><div className="sensor-health-facts"><span>Detected issues<strong>{item.errors} lots</strong></span><span>Reference checks<strong>{sensorChecks.length}</strong></span></div><small>{!calibrationSensor ? 'Accuracy not measured · no independent reference available.' : lastCheck ? statusLabel(lastCheck, sensorConfig[calibrationSensor].tolerance) : 'Accuracy not measured · awaiting external reference readings.'}</small>{lastCheck && calibrationSensor && <small>Last reference difference: {lastCheck.error > 0 ? '+' : ''}{lastCheck.error.toFixed(2)} {sensorConfig[calibrationSensor].unit} · {new Date(lastCheck.checkedAt).toLocaleString()}</small>}</article>;
+        return <article key={item.key} className="sensor-health-card"><div><strong>{item.name}</strong><span className="source-status reference">{item.source}</span></div><p>{item.limit}</p><div className="sensor-health-facts"><span>Detected issues<strong>{item.errors} lots</strong></span><span>Reference checks<strong>{sensorChecks.length}</strong></span></div><small>{!calibrationSensor ? 'Accuracy not measured · no independent reference available.' : lastCheck ? statusLabel(lastCheck, sensorConfig[calibrationSensor].tolerance) : 'Accuracy not measured · awaiting external reference readings.'}</small>{calibrationSensor && <small>{calibrationSummary(calibrationSensor)}</small>}{lastCheck && calibrationSensor && <small>Last reference difference: {lastCheck.error > 0 ? '+' : ''}{lastCheck.error.toFixed(2)} {sensorConfig[calibrationSensor].unit} · {new Date(lastCheck.checkedAt).toLocaleString()}</small>}</article>;
       })}</div>
       <p className="prototype-warning">Issue counts are computed from current demo values against the displayed demo rules. “Verified accuracy: Not measured” is intentional: simulated readings have no independent physical reference, so reporting a sensor accuracy percentage would be misleading.</p>
     </section>

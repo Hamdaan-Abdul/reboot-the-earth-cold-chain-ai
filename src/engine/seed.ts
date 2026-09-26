@@ -122,6 +122,46 @@ export function makeInitialBatches(): Batch[] {
   });
 }
 
+export function createDemoArrival(
+  existing: Batch[],
+  profiles: Record<string, Product> = PRODUCTS,
+  at = new Date(),
+  sequence = 1,
+): Batch {
+  const templates = existing.length ? existing : makeInitialBatches();
+  const products = Object.values(profiles);
+  const product = products[(sequence - 1) % products.length] ?? Object.values(PRODUCTS)[0];
+  const template = templates[(sequence * 7) % templates.length];
+  const id = `DEMO-${at.getTime()}-${String(sequence).padStart(4, '0')}`;
+  const batch = createManualBatch({
+    id,
+    productKey: product.key,
+    originCity: template.originCity,
+    originCountry: template.originCountry,
+    supplierName: 'Illustrative demo supplier · generated sample',
+    weightKg: 250 + ((sequence * 173) % 1050),
+    tempC: product.optimalMaxTempC,
+    ageDays: 0.25 + (sequence % 5) * 0.25,
+    ethylenePpm: product.climacteric ? 0.08 + (sequence % 5) * 0.04 : 0.03,
+  }, templates, profiles);
+  return {
+    ...batch,
+    isManual: undefined,
+    isAutoDemo: true,
+    supplierLotCode: id,
+    originAirportCode: template.originAirportCode,
+    lat: template.lat,
+    lng: template.lng,
+    humidity: template.humidity,
+    outsideTempC: template.outsideTempC,
+    weatherHeatIndexC: template.weatherHeatIndexC,
+    visionRipeness: 0.2 + (sequence % 6) * 0.1,
+    visionBlemish: 0.02 + (sequence % 4) * 0.025,
+    olfactoryGasPpm: 0.04 + (sequence % 3) * 0.03,
+    eventLog: [`Auto-generated demo arrival · illustrative data, not a real shipment · ${at.toLocaleTimeString()}`, ...batch.eventLog],
+  };
+}
+
 export type ManualBatchInput = {
   id: string;
   productKey: string;

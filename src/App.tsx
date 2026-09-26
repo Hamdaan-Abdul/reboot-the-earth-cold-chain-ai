@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   makeInitialBatches,
+  createDemoArrival,
   recordOperatorDecision,
   tickSimulation,
   triggerEthyleneSpike,
@@ -110,7 +111,7 @@ function loadAppState(): { batches: Batch[]; events: AuditEvent[]; products: Rec
         priceBasePerKg: profile?.priceBasePerKg ?? batch.priceBasePerKg ?? 1,
       };
     };
-    const savedBatches = state.schemaVersion === 4 && Array.isArray(state.batches) && state.batches.length > 0 && state.batches.every(isStoredBatch)
+    const savedBatches = (state.schemaVersion === 4 || state.schemaVersion === 5) && Array.isArray(state.batches) && state.batches.length > 0 && state.batches.every(isStoredBatch)
       ? state.batches.map(upgradeBatch)
       : undefined;
     const legacyManualLots = Array.isArray(state.manualLots)
@@ -156,7 +157,7 @@ function loadAppState(): { batches: Batch[]; events: AuditEvent[]; products: Rec
       calibrations,
       warning: migratedSampleData
         ? 'Sample lots were refreshed to restore their starting condition; manually entered lots were kept. Prediction history and calibration notes were preserved.'
-        : state.schemaVersion === 4 && !savedBatches
+        : (state.schemaVersion === 4 || state.schemaVersion === 5) && !savedBatches
           ? 'Saved lot data was invalid; starting with fresh sample lots.'
           : '',
       lastUpdated: savedBatches || legacyManualLots.length ? validSavedAt : now,
@@ -177,6 +178,8 @@ export default function App() {
   const learningRef = useRef(learning);
   const [calibrations, setCalibrations] = useState<CalibrationCheck[]>(initialState.calibrations);
   const tripTrackers = useRef<Record<string, { routeKey: string; routeName: string; foodGroup: Batch['foodGroup']; startTempC: number; peakTempC: number }>>({});
+  const arrivalSequence = useRef(0);
+  const lastDemoArrivalAt = useRef(Date.now());
   const [now, setNow] = useState(initialState.lastUpdated);
   const [selectedBatchId, setSelectedBatchId] = useState<string>();
   const [searchQuery, setSearchQuery] = useState('');
@@ -245,6 +248,26 @@ export default function App() {
     }
   };
 
+  const addDemoArrival = () => {
+    const at = new Date();
+    const newBatch = createDemoArrival(batchesRef.current, products, at, ++arrivalSequence.current);
+    const generated = [newBatch, ...batchesRef.current];
+    const recentDemoIds = new Set(generated.filter((batch) => batch.isAutoDemo).slice(0, 24).map((batch) => batch.id));
+    const next = generated.filter((batch) => !batch.isAutoDemo || recentDemoIds.has(batch.id));
+    batchesRef.current = next;
+    setBatches(next);
+    setNow(at);
+    lastDemoArrivalAt.current = at.getTime();
+    const event: AuditEvent = {
+      id: `${newBatch.id}-arrival`,
+      at: at.toLocaleTimeString(),
+      batchId: newBatch.id,
+      message: `Illustrative demo arrival added · ${newBatch.productName}, ${newBatch.weightKg} kg from ${newBatch.originCity}. Generated sample values, not a real shipment or calibrated measurement.`,
+      kind: 'INFO',
+    };
+    setEvents((previous) => [event, ...previous].slice(0, 40));
+  };
+
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     try {
@@ -270,7 +293,7 @@ export default function App() {
   useEffect(() => {
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        schemaVersion: 4,
+        schemaVersion: 5,
         batches,
         events: events.slice(0, 40),
         products: Object.values(products).filter((product) => product.custom),
@@ -284,9 +307,14 @@ export default function App() {
   }, [batches, events, now, products, learning, calibrations]);
 
   useEffect(() => {
-    const interval = window.setInterval(advanceSimulation, 150000);
+    const interval = window.setInterval(() => {
+      advanceSimulation();
+      if (Date.now() - lastDemoArrivalAt.current >= 5 * 60 * 1000) {
+        addDemoArrival();
+      }
+    }, 150000);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [products]);
 
   const triggerAction = (batchId: string, action: keyof typeof actionFunctions) => {
     setNow(new Date());
@@ -457,7 +485,7 @@ export default function App() {
       case 'map': return <MapPage batches={batches} onSelectBatch={selectBatch} />;
       case 'inspector': return <InspectorPage batches={batches} onSelectBatch={selectBatch} />;
       case 'notifications': return <NotificationsPage batches={batches} events={events} onSelectBatch={selectBatch} onRecordDecision={recordDecision} />;
-      case 'intake': return <IntakePage batches={batches} products={products} onAddBatch={addBatch} />;
+      case 'intake': return <IntakePage batches={batches} products={products} onAddBatch={addBatch} onAddDemoBatch={addDemoArrival} />;
       case 'pipeline': return <PipelinePage batches={batches} onSelectBatch={selectBatch} />;
       case 'activity': return <ActivityPage batches={batches} events={events} />;
       case 'simulator': return <SimulatorPage batches={batches} events={events} onAction={triggerAction} onSelectBatch={selectBatch} />;
@@ -470,9 +498,9 @@ export default function App() {
   return <div className="app-shell">
     <a className="skip-link" href="#main-content">Skip to content</a>
     <aside className="sidebar">
-      <a className="brand" href="#overview" onClick={(event) => { event.preventDefault(); setPage('overview'); }} aria-label="Reboot the Earth home">
+      <a className="brand" href="#overview" onClick={(event) => { event.preventDefault(); setPage('overview'); }} aria-label="Project Light 19 home">
         <span className="brand-symbol"><span /></span>
-        <span><strong>reboot<span>.</span></strong><small>THE EARTH · CMUQ</small></span>
+        <span><strong>project<span>.</span></strong><small>LIGHT 19 · CMUQ</small></span>
       </a>
       <div className="workspace-label">COLD-CHAIN ASSISTANT</div>
       <nav className="nav" aria-label="Main navigation">
@@ -490,7 +518,7 @@ export default function App() {
     </aside>
     <main id="main-content" className="main-panel">
       <header className="topbar">
-        <div className="breadcrumb"><span>REBOOT THE EARTH</span><i>/</i><strong>{[...navigation, ...moreNavigation].find((item) => item.id === page)?.label}</strong></div>
+        <div className="breadcrumb"><span>PROJECT LIGHT 19</span><i>/</i><strong>{[...navigation, ...moreNavigation].find((item) => item.id === page)?.label}</strong></div>
         <div className="topbar-right">
           <form className="lot-search" onSubmit={searchBatch}><input aria-label="Search lots by ID, supplier code, or produce" list="lot-search-suggestions" placeholder="Search lots…" value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setSearchMessage(''); }} /><datalist id="lot-search-suggestions">{batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.productName} · {batch.supplierLotCode}</option>)}</datalist><button type="submit">Search</button></form>
           <button className="topbar-icon-button" onClick={() => setScannerOpen(true)} aria-label="Scan a lot QR code" title="Scan lot QR">▦ <span>Scan</span></button>
@@ -507,7 +535,7 @@ export default function App() {
       {storageWarning && <div className="storage-warning" role="status">{storageWarning}</div>}
       {searchMessage && <div className="search-message" role="status">{searchMessage}</div>}
       <div className="content-panel" key={page}>{renderPage()}</div>
-      <footer className="app-footer"><span>REBOOT THE EARTH <i>·</i> COLD-CHAIN DECISION SUPPORT</span><span>Demo only · example data · no real bookings or dispatches</span></footer>
+      <footer className="app-footer"><span>PROJECT LIGHT 19 <i>·</i> COLD-CHAIN DECISION SUPPORT</span><span>Demo only · example data · no real bookings or dispatches</span></footer>
     </main>
     {selectedBatch && <BatchDetailDrawer batch={selectedBatch} events={events} onClose={() => setSelectedBatchId(undefined)} onAction={triggerAction} onRecordDecision={recordDecision} />}
     {scannerOpen && <QRScanner onClose={() => setScannerOpen(false)} onDetected={handleScannedCode} />}

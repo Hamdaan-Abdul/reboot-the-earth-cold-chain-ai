@@ -82,6 +82,7 @@ export type SensorReading = {
 export type Batch = {
   id: string;
   isManual?: boolean;
+  isAutoDemo?: boolean;
   productKey: string;
   productName: string;
   foodGroup: FoodGroup;

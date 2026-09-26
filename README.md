@@ -1,4 +1,4 @@
-# Reboot the Earth — Cold-Chain Food AI
+# Project Light 19 — Cold-Chain Food AI
 
 A frontend-only international cold-chain decision prototype built for CMUQ Qatar. Simulated sensor and flight streams feed a pure TypeScript shelf-life and route-economics engine; route recommendations follow freshness (raw can travel farther, edible stays regional, near-expiry stays local, and expired lots follow safe recovery tiers). Operators can approve recommendations for simulation only; no real shipment or partner action is triggered.
 
@@ -38,6 +38,7 @@ npm run build
 - Seeded traceability covers 16 produce lots from 12 origin markets with supplier lot codes, packing dates, pallet counts, cold-store readings, and destination partners. All market, carrier, flight, and sensor values are simulated sample data for demonstration; connect validated operator feeds before making real dispatch decisions.
 - A batch picker is available from every tab. Select any item in the overview, route map, flight board, workflow, inspector, or reference data to open its traceability, sensor history, reasoning, scheduled routine, audit trail, fault controls, and operator dispatch confirmation.
 - Predictions learns route- and food-group-specific temperature rises from completed simulated flights, saves the observations in this browser, and offers a bounded pre-cooling setpoint for operator review. Applying it changes only the local demo lot; it is not a refrigeration control. Sensor settings shows simulated signal issues and lets an operator compare displayed values with a trusted external reference, but it does not claim device accuracy or calibrate hardware.
+- The demo starts with 16 illustrative sample lots and adds a clearly labeled simulated arrival every five minutes while the app is open; operators can add one immediately from Manual intake. It retains at most 24 generated arrivals alongside the original samples and operator-entered lots. Auto-generated records are not shipments, observations from real sensors, or calibration evidence.
 - The streamlined interface includes lot search, camera-based QR lookup, action-needed notifications, and manual lot intake with validation and a recommendation preview before adding it to the sample inventory.
 - Dark and light themes can be toggled from the header; the choice is saved in browser storage.
 
@@ -58,7 +59,7 @@ The live public integrations are deliberately limited to sources that match the 
 
 ### Data that is still simulated or awaiting a suitable source
 
-The supplied links do not provide real lot-level temperature/humidity sensor readings, GPS movement, ethylene, vision grading, spoilage gas, traffic, market demand/prices, or airline schedules and cargo capacity. These values and the sample lot inventory therefore remain explicitly illustrative; no unrelated API is substituted for them. Replace them only after selecting data providers or connecting actual device/operator feeds.
+The supplied links do not provide real lot-level temperature/humidity sensor readings, GPS movement, ethylene, vision grading, spoilage gas, traffic, market demand/prices, or airline schedules and cargo capacity. These values and the sample lot inventory therefore remain explicitly illustrative; no unrelated API is substituted for them. Repeatedly generating sample lots can exercise the UI and route-learning code, but cannot improve real-world accuracy or sensor calibration. For that, connect actual device/operator feeds and collect independent reference measurements.
 
 The linked FAO/OWID material is not a direct measurement of this app’s food saved, meals redirected, or emissions avoided. Current shelf-life profiles, safe ranges, the shelf-life engine, and impact calculations have not been changed. Do not interpret the demo’s estimated impact as measured or causal.
 

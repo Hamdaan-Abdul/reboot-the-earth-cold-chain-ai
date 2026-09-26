@@ -98,7 +98,7 @@ export function BatchDetailDrawer({
 
   return <div className="detail-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <aside className="batch-detail-drawer" role="dialog" aria-modal="true" aria-labelledby="batch-detail-title">
-      <div className="drawer-header"><div><div className="eyebrow">Lot {batch.id}</div><h2 id="batch-detail-title">{batch.productName}</h2><p>{batch.originCity}, {batch.originCountry} · {batch.weightKg.toLocaleString()} kg</p></div><button ref={closeButtonRef} className="drawer-close" aria-label="Close batch details" onClick={onClose}>×</button></div>
+      <div className="drawer-header"><div><div className="eyebrow">Lot {batch.id}{batch.isAutoDemo ? ' · generated demo sample' : ''}</div><h2 id="batch-detail-title">{batch.productName}</h2><p>{batch.originCity}, {batch.originCountry} · {batch.weightKg.toLocaleString()} kg</p></div><button ref={closeButtonRef} className="drawer-close" aria-label="Close batch details" onClick={onClose}>×</button></div>
       <div className="drawer-scroll">
         <div className="drawer-status-row"><CategoryBadge category={batch.category} /><span className={`plain-status ${batch.contaminated ? 'danger' : batch.anomalyReason || batch.status === 'PENDING_APPROVAL' || batch.status === 'ANOMALY_DETECTED' ? 'review' : batch.dispatchConfirmed ? 'approved' : ''}`}>{statusLabel}</span></div>
         <section className="recommendation-card" aria-labelledby="recommendation-title">

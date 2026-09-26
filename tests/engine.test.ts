@@ -236,7 +236,7 @@ describe('cold-chain engine calculations', () => {
     expect(reset.operatorDecision).toBeUndefined();
     expect(reset.operatorNote).toBeUndefined();
     expect(reset.dispatchConfirmed).toBe(false);
-    expect(reset.status).not.toBe('DISPATCH_CONFIRMED');
+    expect(reset.status).toBe('PENDING_APPROVAL');
     expect(reset.assignedDestination.id).toBe(batch.assignedDestination.id);
     expect(reset.eventLog[0]).toContain('decision and note cleared');
     expect(resetOperatorDecision(batch)).toBe(batch);

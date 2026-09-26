@@ -174,10 +174,9 @@ export function recordOperatorDecision(
 
 export function resetOperatorDecision(batch: Batch): Batch {
   if (!batch.operatorDecision) return batch;
-  const reset = updateBatchCore({
+  const recalculated = updateBatchCore({
     ...batch,
     dispatchConfirmed: false,
-    status: batch.contaminated || batch.anomalyReason ? 'ANOMALY_DETECTED' : 'STATUS_NORMAL',
     operatorDecision: undefined,
     operatorNote: undefined,
     flight: undefined,
@@ -185,6 +184,10 @@ export function resetOperatorDecision(batch: Batch): Batch {
     flightHoursUntilDeparture: undefined,
     flightHoursRemaining: undefined,
   }, 'long-range');
+  const reset: Batch = {
+    ...recalculated,
+    status: recalculated.contaminated || recalculated.anomalyReason ? 'ANOMALY_DETECTED' : 'PENDING_APPROVAL',
+  };
   return appendLog(reset, 'Operator decision and note cleared; route recalculated for review.');
 }
 

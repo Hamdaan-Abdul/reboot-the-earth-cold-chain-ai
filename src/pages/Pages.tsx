@@ -1,8 +1,9 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { AuditEvent, Batch, Category, FoodGroup, Product } from '../types';
 import { CATEGORY_COLORS, CATEGORY_LABELS, createManualBatch, createProductProfile, DESTINATIONS, FLIGHTS, FOOD_GROUP_LABELS, PRODUCTS } from '../engine';
 import { EthyleneChart, HumidityChart, RouteMap, SensorChart, SpeedChart, TemperatureChart } from '../components/Charts';
 import { CategoryBadge, EventList, FoodGroupBadge, SectionHeading } from '../components/Shared';
+import { fetchAmbientWeather, fetchRoadRoute, type AmbientWeather, type RoadRoute } from '../sources/live';
 
 const needsOperatorReview = (batch: Batch) => batch.contaminated || batch.status === 'ANOMALY_DETECTED' || batch.status === 'PENDING_APPROVAL';
 
@@ -148,9 +149,49 @@ export function IntakePage({ batches, products, onAddBatch }: { batches: Batch[]
 export function MapPage({ batches, onSelectBatch }: { batches: Batch[]; onSelectBatch: (id: string) => void }) {
   const [telemetryBatchId, setTelemetryBatchId] = useState(batches[0]?.id ?? '');
   const telemetryBatch = batches.find((batch) => batch.id === telemetryBatchId) ?? batches[0];
+  const [ambientWeather, setAmbientWeather] = useState<AmbientWeather>();
+  const [roadRoute, setRoadRoute] = useState<RoadRoute>();
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [weatherRefresh, setWeatherRefresh] = useState(0);
+  useEffect(() => {
+    if (!telemetryBatch) return;
+    let current = true;
+    setAmbientWeather(undefined);
+    setWeatherLoading(true);
+    // Open-Meteo supplies current outdoor conditions for this lot's displayed coordinate; it is not cargo-sensor telemetry.
+    fetchAmbientWeather(telemetryBatch.lat, telemetryBatch.lng, {
+      temperatureC: telemetryBatch.outsideTempC,
+      humidityPercent: telemetryBatch.humidity,
+    }, weatherRefresh > 0).then((result) => {
+      if (current) setAmbientWeather(result);
+    }).finally(() => {
+      if (current) setWeatherLoading(false);
+    });
+    return () => { current = false; };
+  }, [telemetryBatch?.id, weatherRefresh]);
   const openBatch = (id: string) => {
     setTelemetryBatchId(id);
+    setRoadRoute(undefined);
+    setWeatherRefresh(0);
     onSelectBatch(id);
+  };
+  const selectTelemetryBatch = (id: string) => {
+    setTelemetryBatchId(id);
+    setRoadRoute(undefined);
+    setWeatherRefresh(0);
+  };
+  const checkRoadRoute = async () => {
+    if (!telemetryBatch || telemetryBatch.assignedDestination.routeMode !== 'ROAD') return;
+    setRouteLoading(true);
+    // OSRM calculates road routes only; air and sea schedules remain illustrative until a flight/port feed is selected.
+    const result = await fetchRoadRoute(
+      { latitude: telemetryBatch.lat, longitude: telemetryBatch.lng },
+      { latitude: telemetryBatch.assignedDestination.lat, longitude: telemetryBatch.assignedDestination.lng },
+      { distanceKm: telemetryBatch.assignedDestination.distanceKm, durationHours: telemetryBatch.assignedDestination.transitHours },
+    );
+    setRoadRoute(result);
+    setRouteLoading(false);
   };
   const mapBatches = batches.map((batch) => {
     return {
@@ -162,7 +203,15 @@ export function MapPage({ batches, onSelectBatch }: { batches: Batch[]; onSelect
   });
   const readings = useMemo(() => telemetryBatch?.history ?? [], [telemetryBatch]);
   return <div className="page-stack">
-    <SectionHeading eyebrow="Route planning · simulated" title="Explore suggested routes." detail="Illustrative flight and road schedules. Every destination is checked against estimated freshness." action={<label className="filter-label">Lot<select value={telemetryBatch?.id ?? ''} onChange={(event) => setTelemetryBatchId(event.target.value)}>{batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.id} · {batch.productName}</option>)}</select></label>} />
+    <SectionHeading eyebrow="Route planning · simulated" title="Explore suggested routes." detail="Illustrative flight and road schedules. Every destination is checked against estimated freshness." action={<label className="filter-label">Lot<select value={telemetryBatch?.id ?? ''} onChange={(event) => selectTelemetryBatch(event.target.value)}>{batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.id} · {batch.productName}</option>)}</select></label>} />
+    {telemetryBatch && <section className="panel live-source-panel" aria-label="Live context for selected lot">
+      <div className="panel-title-row"><div><div className="eyebrow">External context · selected lot</div><h3>{telemetryBatch.productName} · {telemetryBatch.id}</h3></div><span className="small-muted">Cargo sensors remain simulated</span></div>
+      <div className="live-source-grid">
+        <div><strong>Outdoor weather</strong>{weatherLoading && !ambientWeather ? <span>Loading current conditions…</span> : ambientWeather ? <><span>{ambientWeather.temperatureC.toFixed(1)}°C · {ambientWeather.humidityPercent.toFixed(0)}% RH</span><small>{ambientWeather.status === 'live' ? 'Live' : ambientWeather.status === 'cached' ? 'Cached' : 'Sample fallback'} · {new Date(ambientWeather.observedAt).toLocaleString()}</small><small><a href="https://open-meteo.com/">Weather data by Open-Meteo.com</a> · <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a></small>{ambientWeather.message && <small className="source-warning">{ambientWeather.message}</small>}</> : <span>Weather unavailable.</span>}<button className="text-link" onClick={() => setWeatherRefresh((count) => count + 1)} disabled={weatherLoading}>Refresh weather</button></div>
+        <div><strong>Road distance · duration</strong>{telemetryBatch.assignedDestination.routeMode === 'ROAD' ? roadRoute ? <><span>{roadRoute.distanceKm.toFixed(1)} km · {roadRoute.durationHours.toFixed(1)} h</span><small>{roadRoute.status === 'live' ? 'Live route · OSRM' : roadRoute.status === 'cached' ? 'Cached route · OSRM' : 'Modeled fallback'}</small><small><a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors · ODbL</a></small>{roadRoute.message && <small className="source-warning">{roadRoute.message}</small>}</> : <span>Not checked yet.</span> : <span>OSRM is road-only; this lot uses {telemetryBatch.assignedDestination.routeMode.toLowerCase()} routing.</span>}{telemetryBatch.assignedDestination.routeMode === 'ROAD' && !roadRoute && <small><a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors · ODbL</a></small>}<button className="text-link" onClick={checkRoadRoute} disabled={routeLoading || telemetryBatch.assignedDestination.routeMode !== 'ROAD'}>{routeLoading ? 'Checking route…' : 'Check live road route'}</button></div>
+      </div>
+      <p className="prototype-warning">Weather is measured at a displayed coordinate; the lot's GPS position may itself be sample data. It is not a temperature reading inside the shipment. OSRM's public demo service is best-effort; its route result does not include live traffic.</p>
+    </section>}
     <section className="panel map-panel"><div className="panel-title-row"><div><div className="eyebrow">Sample international lanes</div><h3>Suggested routes by lot</h3></div><span className="small-muted">{batches.length} lots</span></div>
       <RouteMap batches={mapBatches} onSelectBatch={openBatch} />
       <div className="map-legend">{(['RAW', 'EDIBLE', 'ALMOST_BAD', 'EXPIRED'] as Category[]).map((category) => <span key={category}><i style={{ background: CATEGORY_COLORS[category] }} />{CATEGORY_LABELS[category]}</span>)}</div>
@@ -312,6 +361,19 @@ export function ReferencePage({ batches, products, onAddProduct, onSelectBatch }
 
   return <div className="page-stack">
     <SectionHeading eyebrow="Transparent by design" title="Reference & safety rules." detail="Crop assumptions, engine formulas, routing rules, and expired-food recovery order." />
+    <section className="panel data-sources-panel">
+      <div className="eyebrow">Data sources · reviewed 26 September 2026</div><h3>What is live, what is reference, and what is still simulated</h3>
+      <p className="reference-note">External sources add context; they do not certify food safety or replace shipment sensors. Live requests use a time limit and fall back to cached or clearly marked sample values.</p>
+      <div className="source-list">
+        <article><div><strong>Open-Meteo · live ambient weather</strong><span className="source-status live">Connected on Route map</span></div><p>Current outdoor temperature and humidity at the selected lot position. CC BY 4.0 requires credit and a link to the license; free API is non-commercial and limited to 10,000 calls/day, 5,000/hour, 600/minute.</p><a href="https://open-meteo.com/" target="_blank" rel="noreferrer">API and terms ↗</a></article>
+        <article><div><strong>OSRM · live road-route lookup</strong><span className="source-status live">On demand · roads only</span></div><p>Road distance and estimated duration via OpenStreetMap. OSM data is ODbL: show “© OpenStreetMap contributors” and link the license. The public demo is best-effort, has no SLA, and does not provide live traffic; air and sea routes are not covered.</p><a href="https://project-osrm.org/docs/v5.24.0/api/" target="_blank" rel="noreferrer">OSRM API docs</a><span> · </span><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OSM copyright</a></article>
+        <article><div><strong>NASA POWER · climate reference candidate</strong><span className="source-status reference">Not queried by this demo</span></div><p>Historical and climate-quality meteorology/solar data for regional baselines, not shipment-level live weather. Public API examples need no key; excessive synchronous requests can be blocked and HTTP 429 is possible. Cite NASA POWER and check product metadata for any product-specific reuse conditions.</p><a href="https://power.larc.nasa.gov/docs/services/api/" target="_blank" rel="noreferrer">API documentation</a></article>
+        <article><div><strong>FAO Food Loss and Waste Database · benchmark candidate</strong><span className="source-status reference">Not queried by this demo</span></div><p>Country, commodity, and value-chain loss estimates compiled from heterogeneous research and reports; these are context, not a lot-level measured reduction. FAO statistical databases are generally CC BY 4.0, but the FLW collection's individual studies can carry separate rights; verify each record before reuse and cite FAO. No API contract, key requirement, or request quota is documented for this database.</p><a href="https://www.fao.org/platform-food-loss-waste/flw-data/en" target="_blank" rel="noreferrer">Database</a><span> · </span><a href="https://www.fao.org/contact-us/terms/db-terms-of-use/en/" target="_blank" rel="noreferrer">FAO database terms</a></article>
+        <article><div><strong>Our World in Data · benchmark candidate</strong><span className="source-status reference">No indicator selected</span></div><p>The supplied “Food Waste” URL currently redirects to environmental impacts of food. Chart CSV/JSON APIs do not require a key; no numeric quota is published. Licensing depends on the specific indicator: OWID-created material is CC BY 4.0, while underlying third-party data keep their own terms.</p><a href="https://ourworldindata.org/faqs" target="_blank" rel="noreferrer">API, reuse, and citation guidance</a></article>
+        <article><div><strong>US EPA Wasted Food Scale · guidance reference</strong><span className="source-status reference">Guidance only</span></div><p>Static U.S. guidance for comparing wasted-food management options; not an API or numerical impact dataset. The old Food Recovery Hierarchy link redirects to the updated Wasted Food Scale. Attribute EPA and verify that any embedded third-party material has separate permission.</p><a href="https://www.epa.gov/sustainable-management-food/wasted-food-scale" target="_blank" rel="noreferrer">EPA guidance</a></article>
+      </div>
+      <p className="prototype-warning">Still simulated: in-container temperature/humidity, GPS motion, ethylene, vision grading, spoilage gas, traffic, demand, prices, cargo flights, and batch records. None of the supplied sources provides these lot-specific feeds. Product shelf-life/safe-range profiles and impact calculations remain unchanged pending authoritative per-food data and your approval.</p>
+    </section>
     <section className="panel">
       <div className="panel-title-row"><div><div className="eyebrow">Food profiles · {rows.length}</div><h3>Handling parameters by food type</h3><p className="reference-note">Profiles here are used when assessing new lots. Changes are saved in this browser.</p></div><button className="apply-route-button reference-add-toggle" onClick={() => setShowAddReference((open) => !open)}>{showAddReference ? 'Close form' : '+ Add food reference'}</button></div>
       {showAddReference && <form className="reference-form" onSubmit={addReference}>

@@ -384,17 +384,20 @@ export default function App() {
 
   const resetDecisions = () => {
     const decisions = batchesRef.current.filter((batch) => batch.operatorDecision);
-    if (!decisions.length) return;
-    const next = batchesRef.current.map(resetOperatorDecision);
-    batchesRef.current = next;
-    setBatches(next);
+    if (decisions.length) {
+      const next = batchesRef.current.map(resetOperatorDecision);
+      batchesRef.current = next;
+      setBatches(next);
+    }
     const at = new Date();
     setNow(at);
     const resetEvent: AuditEvent = {
       id: `SYSTEM-${at.getTime()}-decisions-reset`,
       at: at.toLocaleTimeString(),
       batchId: 'SYSTEM',
-      message: `Operator reset · cleared saved decisions and notes for ${decisions.length} lot${decisions.length === 1 ? '' : 's'} and returned routes to current recommendations. Lots, sensor data, and active safety alerts were preserved.`,
+      message: decisions.length
+        ? `Operator reset · cleared saved decisions and notes for ${decisions.length} lot${decisions.length === 1 ? '' : 's'} and returned routes to current recommendations. Lots, sensor data, and active safety alerts were preserved.`
+        : 'Action needed inputs cleared · no saved lot decisions were found. Lots, sensor data, and active safety alerts were preserved.',
       kind: 'INFO',
     };
     setEvents((current) => [resetEvent, ...current].slice(0, 40));

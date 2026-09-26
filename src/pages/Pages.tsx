@@ -63,9 +63,20 @@ export function NotificationsPage({ batches, events, onSelectBatch, onRecordDeci
     .filter((batch) => `${batch.id} ${batch.productName} ${batch.supplierLotCode} ${batch.foodGroup} ${FOOD_GROUP_LABELS[batch.foodGroup]}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => Number(b.contaminated) - Number(a.contaminated) || a.dslDays - b.dslDays);
   const decisionCount = batches.filter((batch) => Boolean(batch.operatorDecision)).length;
+  const resetActionInputs = () => {
+    setQuery('');
+    setOperatorName('');
+    setApprovalError('');
+  };
   return <div className="page-stack">
-    <SectionHeading eyebrow="Operator queue" title="Needs your review" detail="Check the alert, evidence, and suggested next step. This demo will not dispatch a shipment." action={<button className="reset-decisions-button" disabled={!decisionCount} onClick={() => {
-      if (window.confirm(`Reset saved decisions and notes for ${decisionCount} lots? This preserves lots, sensor readings, and active safety alerts.`)) onResetDecisions();
+    <SectionHeading eyebrow="Operator queue" title="Needs your review" detail="Check the alert, evidence, and suggested next step. This demo will not dispatch a shipment." action={<button className="reset-decisions-button" onClick={() => {
+      const scope = decisionCount
+        ? `Reset saved decisions and notes for ${decisionCount} lots`
+        : 'Clear the Action needed search and operator-name fields';
+      if (window.confirm(`${scope}? Lots, sensor readings, and active safety alerts will be preserved.`)) {
+        onResetDecisions();
+        resetActionInputs();
+      }
     }}>Reset my decisions{decisionCount ? ` · ${decisionCount}` : ''}</button>} />
     <label className="inventory-filter">Search actions<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Food, lot code, or food group" /></label>
     {actionBatches.length ? <section className="panel"><div className="quick-approval-bar"><label>Name for approval log<input value={operatorName} onChange={(event) => { setOperatorName(event.target.value); setApprovalError(''); }} placeholder="Your name" /></label><small>Approval is recorded locally for the selected suggested route. It does not dispatch a real shipment.</small></div>{approvalError && <p className="form-error" role="alert">{approvalError}</p>}<div className="simple-notification-list">{actionBatches.map((batch) => <article key={batch.id} className="simple-notification">

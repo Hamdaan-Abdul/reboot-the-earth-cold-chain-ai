@@ -105,22 +105,33 @@ function loadAppState(): { batches: Batch[]; events: AuditEvent[]; products: Rec
         priceBasePerKg: profile?.priceBasePerKg ?? batch.priceBasePerKg ?? 1,
       };
     };
-    const savedBatches = (state.schemaVersion === 1 || state.schemaVersion === 2) && Array.isArray(state.batches) && state.batches.length > 0 && state.batches.every(isStoredBatch)
+    const savedBatches = state.schemaVersion === 3 && Array.isArray(state.batches) && state.batches.length > 0 && state.batches.every(isStoredBatch)
       ? state.batches.map(upgradeBatch)
       : undefined;
     const legacyManualLots = Array.isArray(state.manualLots)
       ? state.manualLots.filter((lot): lot is Batch => isStoredBatch(lot) && lot.isManual === true).map(upgradeBatch)
       : [];
+    const savedManualLots = Array.isArray(state.batches)
+      ? state.batches.filter((lot): lot is Batch => isStoredBatch(lot) && lot.isManual === true).map(upgradeBatch)
+      : [];
+    const preservedManualLots = Array.from(new Map([...legacyManualLots, ...savedManualLots].map((lot) => [lot.id, lot])).values());
     const savedEvents = Array.isArray(state.events)
       ? state.events.filter((event): event is AuditEvent => Boolean(event && typeof event === 'object' && typeof (event as AuditEvent).id === 'string' && typeof (event as AuditEvent).message === 'string' && typeof (event as AuditEvent).at === 'string' && typeof (event as AuditEvent).batchId === 'string' && ['INFO', 'WARNING', 'SUCCESS', 'CRITICAL'].includes((event as AuditEvent).kind)))
       : [];
-    const validBatches = savedBatches ?? [...legacyManualLots, ...seeded];
+    const validBatches = savedBatches ?? [...preservedManualLots, ...seeded];
+    const migratedSampleData = !savedBatches && (state.schemaVersion === 1 || state.schemaVersion === 2);
+    const validEvents = savedBatches ? savedEvents : savedEvents.filter((event) => preservedManualLots.some((lot) => lot.id === event.batchId));
+    const updatedEvents = initialAudit(validBatches);
     const validSavedAt = typeof state.savedAt === 'string' && Number.isFinite(Date.parse(state.savedAt)) ? new Date(state.savedAt) : now;
     return {
       batches: validBatches,
-      events: savedEvents.length ? savedEvents.slice(0, 40) : initialAudit(validBatches),
+      events: savedBatches && savedEvents.length ? savedEvents.slice(0, 40) : [...validEvents, ...updatedEvents].slice(0, 40),
       products,
-      warning: state.schemaVersion === 1 && !savedBatches ? 'Saved lot data was invalid; restored the sample inventory.' : '',
+      warning: migratedSampleData
+        ? 'Sample lots were refreshed to restore their starting condition; manually entered lots were kept.'
+        : state.schemaVersion === 3 && !savedBatches
+          ? 'Saved lot data was invalid; starting with fresh sample lots.'
+          : '',
       lastUpdated: savedBatches || legacyManualLots.length ? validSavedAt : now,
     };
   } catch {
@@ -181,7 +192,7 @@ export default function App() {
   useEffect(() => {
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        schemaVersion: 2,
+        schemaVersion: 3,
         batches,
         events: events.slice(0, 40),
         products: Object.values(products).filter((product) => product.custom),
@@ -193,7 +204,7 @@ export default function App() {
   }, [batches, events, now, products]);
 
   useEffect(() => {
-    const interval = window.setInterval(advanceSimulation, 2500);
+    const interval = window.setInterval(advanceSimulation, 150000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -322,7 +333,7 @@ export default function App() {
 
   const selectBatch = (batchId: string) => setSelectedBatchId(batchId);
   const selectedBatch = batches.find((batch) => batch.id === selectedBatchId);
-  const simulationStale = Date.now() - now.getTime() > 10000;
+  const simulationStale = Date.now() - now.getTime() > 180000;
 
   const renderPage = () => {
     switch (page) {

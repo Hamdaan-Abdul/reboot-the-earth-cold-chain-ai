@@ -55,6 +55,9 @@ describe('cold-chain engine calculations', () => {
     const batches = makeInitialBatches();
     expect(new Set(batches.map((batch) => batch.category))).toEqual(new Set(['RAW', 'EDIBLE', 'ALMOST_BAD', 'EXPIRED']));
     expect(batches).toHaveLength(16);
+    expect(batches.filter((batch) => batch.category === 'RAW').length).toBeGreaterThanOrEqual(4);
+    expect(batches.filter((batch) => batch.category === 'EXPIRED').length).toBeLessThanOrEqual(4);
+    expect(batches.filter((batch) => batch.financialPass && !batch.contaminated && batch.category !== 'EXPIRED').length).toBeGreaterThan(0);
     expect(batches.every((batch) => batch.supplierLotCode.length > 8 && batch.palletCount > 0)).toBe(true);
     expect(batches.every((batch) => batch.workflowStage === ({
       RAW: 'INPUT',

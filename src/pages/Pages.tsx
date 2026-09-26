@@ -11,7 +11,8 @@ export function OverviewPage({ batches, events, onSelectBatch, onOpenNotificatio
   const actionBatches = batches.filter(needsOperatorReview)
     .sort((a, b) => Number(b.contaminated) - Number(a.contaminated) || a.dslDays - b.dslDays);
   const actionCount = actionBatches.length;
-  const estimatedValue = batches.reduce((total, batch) => total + batch.expectedRecoveryValue, 0);
+  const viableValueBatches = batches.filter((batch) => batch.financialPass && !batch.contaminated && batch.category !== 'EXPIRED');
+  const estimatedValue = viableValueBatches.reduce((total, batch) => total + Math.max(0, batch.expectedRecoveryValue), 0);
   const estimatedFoodSavedKg = batches.reduce((total, batch) => total + (!batch.contaminated && batch.category !== 'EXPIRED' ? batch.weightKg * batch.probabilitySafeArrival : 0), 0);
   return <div className="page-stack">
     <SectionHeading eyebrow="Operations" title="Start with the lots that need you." detail="Review safety alerts and proposed routes. Nothing moves without an operator’s approval." action={<div className="home-quick-actions"><button className="home-activity-button" onClick={onOpenActivity}>Recent activity <span aria-hidden="true">↗</span></button><button className="action-needed-count notification-shortcut" onClick={onOpenNotifications}>Review queue · {actionCount}</button></div>} />
@@ -25,8 +26,8 @@ export function OverviewPage({ batches, events, onSelectBatch, onOpenNotificatio
       </button>) : <p className="empty-action-state">No lots need review. Search or scan a lot to check its current status.</p>}
     </section>
     <section className="impact-widget" aria-label="Estimated recovery impact">
-      <div className="impact-widget-heading"><div><div className="eyebrow">Current inventory estimate</div><h3>Money · food waste avoided</h3></div><small>Potential outcomes from current lot assessments</small></div>
-      <div className="impact-widget-metrics"><div><small>Estimated net recovery value</small><strong>QAR {estimatedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</strong><span>After modeled route and handling costs</span></div><div><small>Potential food kept in use</small><strong>{(estimatedFoodSavedKg / 1000).toFixed(1)} t</strong><span>{estimatedFoodSavedKg.toLocaleString(undefined, { maximumFractionDigits: 0 })} kg · safe-arrival-weighted estimate</span></div></div>
+      <div className="impact-widget-heading"><div><div className="eyebrow">Current inventory estimate</div><h3>Recovery opportunity · food at risk</h3></div><small>Potential outcomes from current lot assessments</small></div>
+      <div className="impact-widget-metrics"><div><small>Potential value on positive routes</small><strong>QAR {estimatedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</strong><span>{viableValueBatches.length} lots · modeled net after route and handling costs · not realized profit</span></div><div><small>Potential food kept in use</small><strong>{(estimatedFoodSavedKg / 1000).toFixed(1)} t</strong><span>{estimatedFoodSavedKg.toLocaleString(undefined, { maximumFractionDigits: 0 })} kg · safe-arrival-weighted estimate, not confirmed savings</span></div></div>
     </section>
     </div>
     <section className="panel live-batches">

@@ -329,7 +329,7 @@ export default function App() {
       case 'overview': return <OverviewPage batches={batches} events={events} onSelectBatch={selectBatch} onOpenNotifications={() => setPage('notifications')} onOpenLots={() => setPage('inspector')} onOpenActivity={() => setPage('activity')} />;
       case 'map': return <MapPage batches={batches} onSelectBatch={selectBatch} />;
       case 'inspector': return <InspectorPage batches={batches} onSelectBatch={selectBatch} />;
-      case 'notifications': return <NotificationsPage batches={batches} events={events} onSelectBatch={selectBatch} />;
+      case 'notifications': return <NotificationsPage batches={batches} events={events} onSelectBatch={selectBatch} onRecordDecision={recordDecision} />;
       case 'intake': return <IntakePage batches={batches} products={products} onAddBatch={addBatch} />;
       case 'pipeline': return <PipelinePage batches={batches} onSelectBatch={selectBatch} />;
       case 'activity': return <ActivityPage batches={batches} events={events} />;

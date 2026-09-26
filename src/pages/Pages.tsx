@@ -54,19 +54,28 @@ export function ActivityPage({ batches, events }: { batches: Batch[]; events: Au
   </div>;
 }
 
-export function NotificationsPage({ batches, events, onSelectBatch }: { batches: Batch[]; events: AuditEvent[]; onSelectBatch: (id: string) => void }) {
+export function NotificationsPage({ batches, events, onSelectBatch, onRecordDecision }: { batches: Batch[]; events: AuditEvent[]; onSelectBatch: (id: string) => void; onRecordDecision: (id: string, operatorName: string, decision: 'APPROVED_SUGGESTION', note: string) => void }) {
   const [query, setQuery] = useState('');
+  const [operatorName, setOperatorName] = useState('');
+  const [approvalError, setApprovalError] = useState('');
   const actionBatches = batches.filter(needsOperatorReview)
     .filter((batch) => `${batch.id} ${batch.productName} ${batch.supplierLotCode} ${batch.foodGroup} ${FOOD_GROUP_LABELS[batch.foodGroup]}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => Number(b.contaminated) - Number(a.contaminated) || a.dslDays - b.dslDays);
   return <div className="page-stack">
     <SectionHeading eyebrow="Operator queue" title="Needs your review" detail="Check the alert, evidence, and suggested next step. This demo will not dispatch a shipment." />
     <label className="inventory-filter">Search actions<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Food, lot code, or food group" /></label>
-    {actionBatches.length ? <section className="panel"><div className="simple-notification-list">{actionBatches.map((batch) => <button key={batch.id} className="simple-notification selectable-row" onClick={() => onSelectBatch(batch.id)}>
+    {actionBatches.length ? <section className="panel"><div className="quick-approval-bar"><label>Name for approval log<input value={operatorName} onChange={(event) => { setOperatorName(event.target.value); setApprovalError(''); }} placeholder="Your name" /></label><small>Approval is recorded locally for the selected suggested route. It does not dispatch a real shipment.</small></div>{approvalError && <p className="form-error" role="alert">{approvalError}</p>}<div className="simple-notification-list">{actionBatches.map((batch) => <article key={batch.id} className="simple-notification">
       <span className={`notification-mark ${batch.contaminated ? 'danger' : ''}`}>{batch.contaminated ? '!' : '↗'}</span>
       <span className="notification-main"><strong>{batch.productName} <span>· {batch.id}</span></strong><span className="home-food-tags"><FoodGroupBadge foodGroup={batch.foodGroup} /><CategoryBadge category={batch.category} /></span><small>{batch.anomalyReason ? `Alert: ${batch.anomalyReason}.` : batch.lastActionReason}</small><small>Temperature {batch.tempC.toFixed(1)}°C · safe range {batch.safeRange.minC}–{batch.safeRange.maxC}°C · freshness estimate {batch.dslDays.toFixed(1)} days</small><small><b>Suggested:</b> {batch.lastAction} · estimated net {batch.expectedRecoveryValue >= 0 ? '+' : ''}QAR {batch.expectedRecoveryValue.toFixed(0)}</small></span>
-      <span className="notification-open">Review lot →</span>
-    </button>)}</div></section> : <section className="panel empty-action-state">{query ? 'No action items match your search.' : 'No lots need review right now. New alerts will appear here.'}</section>}
+      <div className="notification-actions"><button className="notification-open" onClick={() => onSelectBatch(batch.id)}>Review lot →</button><button className="quick-approve-button" disabled={!operatorName.trim() || batch.contaminated || batch.dispatchConfirmed} onClick={() => {
+        try {
+          onRecordDecision(batch.id, operatorName.trim(), 'APPROVED_SUGGESTION', '');
+          setApprovalError('');
+        } catch (error) {
+          setApprovalError(error instanceof Error ? error.message : `Could not approve ${batch.id}.`);
+        }
+      }}>{batch.contaminated ? 'Safety hold required' : batch.dispatchConfirmed ? 'Already approved' : 'Approve suggested route'}</button></div>
+    </article>)}</div></section> : <section className="panel empty-action-state">{query ? 'No action items match your search.' : 'No lots need review right now. New alerts will appear here.'}</section>}
     <section className="panel"><div className="panel-title-row"><div><div className="eyebrow">Recent activity</div><h3>Latest updates</h3></div></div><EventList events={events} batches={batches} limit={8} /></section>
   </div>;
 }
